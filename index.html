@@ -203,6 +203,7 @@ function App() {
     const rows = await profilesTable.select(`id=eq.${userId}&select=*`, token);
     const profile = rows[0];
     if (!profile) throw new Error("Profil introuvable.");
+    if (profile.supprime) throw new Error("Ce compte a été désactivé par l'administrateur.");
     if (roleAttendu && profile.role !== roleAttendu) throw new Error("Ce compte n'a pas ce rôle.");
     setSession({ token, userId, profile });
     retourAccueil();
@@ -213,6 +214,10 @@ function App() {
     retourAccueil();
   }
 
+  function mettreAJourProfil(nouveauProfil) {
+    setSession((s) => ({ ...s, profile: nouveauProfil }));
+  }
+
   if (session?.profile.role === "admin") {
     return <Shell><TopBar label="Espace administrateur" onLogout={seDeconnecter} /><AdminDash session={session} /></Shell>;
   }
@@ -220,7 +225,7 @@ function App() {
     return <Shell><TopBar label={`Bonjour, ${session.profile.nom || ""}`} onLogout={seDeconnecter} /><PatientEspace session={session} /></Shell>;
   }
   if (session?.profile.role === "infirmier") {
-    return <Shell><TopBar label={`Bonjour, ${session.profile.prenom || ""}`} onLogout={seDeconnecter} /><InfirmierEspace session={session} /></Shell>;
+    return <Shell><TopBar label={`Bonjour, ${session.profile.prenom || ""}`} onLogout={seDeconnecter} /><InfirmierEspace session={session} onProfilChange={mettreAJourProfil} /></Shell>;
   }
 
   return (
@@ -334,11 +339,17 @@ function PatientAuth({ onRetour, onConnecter }) {
   const [mode, setMode] = useState("connexion");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [form, setForm] = useState({ nom: "", telephone: "", quartier: "" });
+  const [form, setForm] = useState({
+    nom: "", telephone: "", quartier: "", sexe: "Femme", age: "", nationalite: "",
+    situation_matrimoniale: "Célibataire", atcd_medicaux: "", atcd_chirurgicaux: "",
+    atcd_familiaux: "", allergies: "", tuteur_nom: "", tuteur_telephone: "",
+  });
+  const [fichierPiece, setFichierPiece] = useState(null);
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(false);
   const [succes, setSucces] = useState(false);
   const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const mineur = form.age !== "" && Number(form.age) < 18;
 
   async function soumettre(e) {
     e.preventDefault();
@@ -347,10 +358,26 @@ function PatientAuth({ onRetour, onConnecter }) {
       if (mode === "connexion") {
         await onConnecter(email, password);
       } else {
+        if (!fichierPiece) throw new Error("Merci de joindre une photo de pièce d'identité.");
+        if (mineur && (!form.tuteur_nom || !form.tuteur_telephone)) throw new Error("Un tuteur est requis pour les moins de 18 ans.");
         const res = await auth.signUp(email.trim().toLowerCase(), password);
         const token = res.access_token;
         if (!token) throw new Error("Confirmation e-mail encore activée côté Supabase — désactive-la.");
-        await profilesTable.insert({ id: res.user.id, role: "patient", email: email.trim().toLowerCase(), verified: false, ...form }, token);
+        const userId = res.user.id;
+        const cheminPiece = await uploadDocument(userId, fichierPiece, "piece", token);
+        await profilesTable.insert(
+          {
+            id: userId, role: "patient", email: email.trim().toLowerCase(), verified: false,
+            nom: form.nom, telephone: form.telephone, quartier: form.quartier,
+            sexe: form.sexe, age: Number(form.age), nationalite: form.nationalite,
+            situation_matrimoniale: form.situation_matrimoniale,
+            atcd_medicaux: form.atcd_medicaux, atcd_chirurgicaux: form.atcd_chirurgicaux,
+            atcd_familiaux: form.atcd_familiaux, allergies: form.allergies,
+            tuteur_nom: mineur ? form.tuteur_nom : null, tuteur_telephone: mineur ? form.tuteur_telephone : null,
+            photo_piece_url: cheminPiece,
+          },
+          token
+        );
         setSucces(true);
       }
     } catch (err) { setErreur(err.message); }
@@ -383,6 +410,36 @@ function PatientAuth({ onRetour, onConnecter }) {
             <Champ label="Nom complet"><input style={inputStyle} required value={form.nom} onChange={(e) => c("nom", e.target.value)} /></Champ>
             <Champ label="Téléphone"><input style={inputStyle} required value={form.telephone} onChange={(e) => c("telephone", e.target.value)} /></Champ>
             <Champ label="Quartier / résidence à Bamako"><input style={inputStyle} required value={form.quartier} onChange={(e) => c("quartier", e.target.value)} /></Champ>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <Champ label="Sexe">
+                  <select style={inputStyle} value={form.sexe} onChange={(e) => c("sexe", e.target.value)}>
+                    <option>Femme</option><option>Homme</option>
+                  </select>
+                </Champ>
+              </div>
+              <div style={{ flex: 1 }}>
+                <Champ label="Âge"><input style={inputStyle} type="number" min="0" required value={form.age} onChange={(e) => c("age", e.target.value)} /></Champ>
+              </div>
+            </div>
+            <Champ label="Nationalité"><input style={inputStyle} required value={form.nationalite} onChange={(e) => c("nationalite", e.target.value)} /></Champ>
+            <Champ label="Situation matrimoniale">
+              <select style={inputStyle} value={form.situation_matrimoniale} onChange={(e) => c("situation_matrimoniale", e.target.value)}>
+                <option>Célibataire</option><option>Marié(e)</option><option>Divorcé(e)</option><option>Veuf(ve)</option>
+              </select>
+            </Champ>
+            <FichierChamp label="Photo pièce d'identité (carte biométrique, fiche individuelle, CNI ou carte scolaire valide)" fichier={fichierPiece} onChange={setFichierPiece} />
+            {mineur && (
+              <div style={{ background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
+                <p style={{ fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" }}>Patient(e) mineur(e) — un tuteur est requis.</p>
+                <Champ label="Nom du tuteur"><input style={inputStyle} required value={form.tuteur_nom} onChange={(e) => c("tuteur_nom", e.target.value)} /></Champ>
+                <Champ label="Téléphone du tuteur"><input style={inputStyle} required value={form.tuteur_telephone} onChange={(e) => c("tuteur_telephone", e.target.value)} /></Champ>
+              </div>
+            )}
+            <Champ label="Antécédents médicaux (maladies chroniques, autres)"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_medicaux} onChange={(e) => c("atcd_medicaux", e.target.value)} /></Champ>
+            <Champ label="Antécédents chirurgicaux"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_chirurgicaux} onChange={(e) => c("atcd_chirurgicaux", e.target.value)} /></Champ>
+            <Champ label="Antécédents familiaux"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_familiaux} onChange={(e) => c("atcd_familiaux", e.target.value)} /></Champ>
+            <Champ label="Allergies connues (médicamenteuses, alimentaires, etc.)"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.allergies} onChange={(e) => c("allergies", e.target.value)} /></Champ>
           </>
         )}
         <ErreurTexte>{erreur}</ErreurTexte>
@@ -510,6 +567,10 @@ function PatientEspace({ session }) {
   const [demandes, setDemandes] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState("");
+  const [pourAutrui, setPourAutrui] = useState(false);
+  const [soigne, setSoigne] = useState({ nom: "", age: "", sexe: "Femme", lien: "", atcd_medicaux: "", atcd_chirurgicaux: "", atcd_familiaux: "", allergies: "", tuteur_nom: "", tuteur_telephone: "" });
+  const cs = (k, v) => setSoigne((f) => ({ ...f, [k]: v }));
+  const soigneMineur = pourAutrui && soigne.age !== "" && Number(soigne.age) < 18;
   const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   function basculerSoin(s) {
     setForm((f) => ({
@@ -534,6 +595,8 @@ function PatientEspace({ session }) {
   async function envoyer(e) {
     e.preventDefault();
     if (!form.heure || form.soins.length === 0) return;
+    if (pourAutrui && (!soigne.nom || !soigne.age || !soigne.lien)) { setErreur("Merci de compléter les informations de la personne soignée."); return; }
+    if (soigneMineur && (!soigne.tuteur_nom || !soigne.tuteur_telephone)) { setErreur("Un tuteur est requis pour un(e) mineur(e)."); return; }
     setErreur("");
     try {
       await demandesTable.insert({
@@ -543,6 +606,17 @@ function PatientEspace({ session }) {
         patient_quartier: session.profile.quartier,
         soin: form.soins.join(", "), tarif_soin: tarifSoin, deplacement: DEPLACEMENT, total,
         heure: form.heure, notes: form.notes, urgent: form.urgent, statut: "attente",
+        pour_autrui: pourAutrui,
+        soigne_nom: pourAutrui ? soigne.nom : session.profile.nom,
+        soigne_age: pourAutrui ? Number(soigne.age) : session.profile.age,
+        soigne_sexe: pourAutrui ? soigne.sexe : session.profile.sexe,
+        soigne_lien: pourAutrui ? soigne.lien : "Moi-même",
+        soigne_atcd_medicaux: pourAutrui ? soigne.atcd_medicaux : session.profile.atcd_medicaux,
+        soigne_atcd_chirurgicaux: pourAutrui ? soigne.atcd_chirurgicaux : session.profile.atcd_chirurgicaux,
+        soigne_atcd_familiaux: pourAutrui ? soigne.atcd_familiaux : session.profile.atcd_familiaux,
+        soigne_allergies: pourAutrui ? soigne.allergies : session.profile.allergies,
+        soigne_tuteur_nom: pourAutrui ? (soigneMineur ? soigne.tuteur_nom : null) : session.profile.tuteur_nom,
+        soigne_tuteur_telephone: pourAutrui ? (soigneMineur ? soigne.tuteur_telephone : null) : session.profile.tuteur_telephone,
       }, session.token);
       setDernier({ ...form, tarifSoin, total });
     } catch (err) { setErreur(err.message); }
@@ -556,6 +630,37 @@ function PatientEspace({ session }) {
         <div>
           {!dernier ? (
             <form onSubmit={envoyer}>
+              <Champ label="Pour qui est ce soin ?">
+                <div style={{ display: "flex", gap: 10, marginBottom: pourAutrui ? 14 : 0 }}>
+                  <button type="button" onClick={() => setPourAutrui(false)} style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${!pourAutrui ? T.primary : T.line}`, background: !pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" }}>Moi-même</button>
+                  <button type="button" onClick={() => setPourAutrui(true)} style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${pourAutrui ? T.primary : T.line}`, background: pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" }}>Une autre personne</button>
+                </div>
+                {pourAutrui && (
+                  <div style={{ border: `1px solid ${T.line}`, borderRadius: 8, padding: 14 }}>
+                    <Champ label="Nom complet de la personne"><input style={inputStyle} required value={soigne.nom} onChange={(e) => cs("nom", e.target.value)} /></Champ>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <div style={{ flex: 1 }}><Champ label="Âge"><input style={inputStyle} type="number" min="0" required value={soigne.age} onChange={(e) => cs("age", e.target.value)} /></Champ></div>
+                      <div style={{ flex: 1 }}>
+                        <Champ label="Sexe">
+                          <select style={inputStyle} value={soigne.sexe} onChange={(e) => cs("sexe", e.target.value)}><option>Femme</option><option>Homme</option></select>
+                        </Champ>
+                      </div>
+                    </div>
+                    <Champ label="Lien avec vous (ex. mère, enfant, ami...)"><input style={inputStyle} required value={soigne.lien} onChange={(e) => cs("lien", e.target.value)} /></Champ>
+                    {soigneMineur && (
+                      <div style={{ background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
+                        <p style={{ fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" }}>Personne mineure — un tuteur est requis.</p>
+                        <Champ label="Nom du tuteur"><input style={inputStyle} required value={soigne.tuteur_nom} onChange={(e) => cs("tuteur_nom", e.target.value)} /></Champ>
+                        <Champ label="Téléphone du tuteur"><input style={inputStyle} required value={soigne.tuteur_telephone} onChange={(e) => cs("tuteur_telephone", e.target.value)} /></Champ>
+                      </div>
+                    )}
+                    <Champ label="Antécédents médicaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_medicaux} onChange={(e) => cs("atcd_medicaux", e.target.value)} /></Champ>
+                    <Champ label="Antécédents chirurgicaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_chirurgicaux} onChange={(e) => cs("atcd_chirurgicaux", e.target.value)} /></Champ>
+                    <Champ label="Antécédents familiaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_familiaux} onChange={(e) => cs("atcd_familiaux", e.target.value)} /></Champ>
+                    <Champ label="Allergies connues"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.allergies} onChange={(e) => cs("allergies", e.target.value)} /></Champ>
+                  </div>
+                )}
+              </Champ>
               <Champ label="Type(s) de soin — sélectionnez-en un ou plusieurs">
                 <div style={{ display: "grid", gap: 8 }}>
                   {Object.keys(TARIFS).map((s) => (
@@ -585,9 +690,11 @@ function PatientEspace({ session }) {
             </form>
           ) : (
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.primary, fontSize: 15, marginBottom: 16 }}>✓ Demande envoyée</div>
-              <PaiementInfo total={dernier.total} />
-              <button style={{ ...btnGhost(), marginTop: 18 }} onClick={() => { setDernier(null); charger(); }}>Faire une autre demande</button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.primary, fontSize: 15, marginBottom: 10 }}>✓ Demande envoyée</div>
+              <p style={{ fontSize: 13.5, color: T.muted, marginBottom: 16 }}>
+                Dès qu'un infirmier accepte votre demande, l'invitation à payer apparaîtra dans l'onglet "Mes demandes".
+              </p>
+              <button style={btnGhost()} onClick={() => { setDernier(null); charger(); }}>Faire une autre demande</button>
             </div>
           )}
         </div>
@@ -649,11 +756,17 @@ function DemandeRowPatient({ d }) {
         {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {formatFCFA(d.total)}
         {d.infirmier_nom ? ` · ${d.infirmier_nom}` : ""}
       </div>
+      {d.statut === "acceptee" && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 13, color: T.primary, fontWeight: 600, marginBottom: 6 }}>Infirmier(ère) assigné(e) — à régler maintenant :</div>
+          <PaiementInfo total={d.total} />
+        </div>
+      )}
     </div>
   );
 }
 
-function InfirmierEspace({ session }) {
+function InfirmierEspace({ session, onProfilChange }) {
   const [onglet, setOnglet] = useState("disponibles");
   const [demandes, setDemandes] = useState([]);
   const [chargement, setChargement] = useState(true);
@@ -684,22 +797,53 @@ function InfirmierEspace({ session }) {
       charger();
     } catch (e) { setErreur(e.message); }
   }
-  async function terminer(id) {
+  async function enregistrerConstantes(id, constantes) {
     try {
-      await demandesTable.update(`id=eq.${id}`, { statut: "terminee" }, session.token);
+      await demandesTable.update(`id=eq.${id}`, constantes, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+  async function terminer(id, demande) {
+    try {
+      const penalite = !!session.profile.penalite_active;
+      await demandesTable.update(`id=eq.${id}`, { statut: "terminee", penalite_appliquee: penalite }, session.token);
+      if (penalite) {
+        const nouveauProfil = { ...session.profile, penalite_active: false };
+        await profilesTable.update(`id=eq.${session.userId}`, { penalite_active: false }, session.token);
+        onProfilChange(nouveauProfil);
+      }
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+  async function annuler(id) {
+    try {
+      await demandesTable.update(`id=eq.${id}`, { statut: "annulee" }, session.token);
+      await profilesTable.update(`id=eq.${session.userId}`, { penalite_active: true }, session.token);
+      onProfilChange({ ...session.profile, penalite_active: true });
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+  async function signaler(id, motif, details) {
+    try {
+      await demandesTable.update(`id=eq.${id}`, { signalement: true, signalement_motif: motif, signalement_details: details }, session.token);
       charger();
     } catch (e) { setErreur(e.message); }
   }
 
   const disponibles = demandes.filter((d) => d.statut === "attente");
   const mesInterventions = demandes.filter((d) => d.infirmier_id === session.userId);
-  const gains = mesInterventions.filter((d) => d.statut === "terminee").reduce((s, d) => s + Math.round(d.tarif_soin * (1 - COMMISSION_TAUX)) + d.deplacement, 0);
+  const gains = mesInterventions.filter((d) => d.statut === "terminee").reduce((s, d) => s + Math.round(d.tarif_soin * (1 - COMMISSION_TAUX) * (d.penalite_appliquee ? 0.5 : 1)) + d.deplacement, 0);
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 20, fontSize: 13.5, color: T.muted }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 13.5, color: T.muted }}>
         <span>{session.profile.specialite}</span><span>·</span><span>{session.profile.residence}</span>
       </div>
+      {session.profile.penalite_active && (
+        <div style={{ background: T.urgentBg || "#F6E5E2", color: T.urgent, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
+          Pénalité en attente : votre prochain soin terminé sera payé à 50%, suite à une annulation.
+        </div>
+      )}
       <div style={{ background: T.primaryLight, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ fontSize: 13.5, color: "#4B5A4F" }}>Vos gains cumulés (soins terminés)</span>
         <strong style={{ fontSize: 16, color: T.primary }}>{formatFCFA(gains)}</strong>
@@ -708,16 +852,35 @@ function InfirmierEspace({ session }) {
       <Onglets items={[{ key: "disponibles", label: `Disponibles (${disponibles.length})` }, { key: "interventions", label: "Mes interventions" }]} actif={onglet} onChange={setOnglet} />
       {chargement ? <Spinner /> : onglet === "disponibles" ? (
         disponibles.length === 0 ? <VideMessage texte="Aucune demande disponible." /> :
-        disponibles.map((d) => <DemandeRowInfirmier key={d.id} d={d} action={<button style={btnGhost()} onClick={() => accepter(d.id)}>Accepter</button>} />)
+        disponibles.map((d) => <DemandeRowInfirmier key={d.id} d={d} onAccepter={() => accepter(d.id)} />)
       ) : (
         mesInterventions.length === 0 ? <VideMessage texte="Aucune intervention." /> :
-        mesInterventions.map((d) => <DemandeRowInfirmier key={d.id} d={d} action={d.statut === "acceptee" ? <button style={btnGhost(T.muted)} onClick={() => terminer(d.id)}>Marquer terminée</button> : null} />)
+        mesInterventions.map((d) => (
+          <DemandeRowInfirmier
+            key={d.id} d={d} detaillee
+            onEnregistrerConstantes={(c) => enregistrerConstantes(d.id, c)}
+            onTerminer={() => terminer(d.id, d)}
+            onAnnuler={() => annuler(d.id)}
+            onSignaler={(motif, details) => signaler(d.id, motif, details)}
+          />
+        ))
       )}
     </div>
   );
 }
-function DemandeRowInfirmier({ d, action }) {
+
+function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes, onTerminer, onAnnuler, onSignaler }) {
   const s = STATUS[d.statut];
+  const [constantes, setConstantes] = useState({
+    constante_ta: d.constante_ta || "", constante_temp: d.constante_temp || "", constante_resp: d.constante_resp || "",
+    constante_pouls: d.constante_pouls || "", constante_spo2: d.constante_spo2 || "", constante_conscience: d.constante_conscience || "",
+  });
+  const [afficherSignal, setAfficherSignal] = useState(false);
+  const [motif, setMotif] = useState("Patient/patiente coopérant(e)");
+  const [details, setDetails] = useState("");
+  const cc = (k, v) => setConstantes((f) => ({ ...f, [k]: v }));
+  const constantesEnregistrees = !!d.constante_ta;
+
   return (
     <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -725,13 +888,75 @@ function DemandeRowInfirmier({ d, action }) {
         <span style={{ fontSize: 12.5, fontWeight: 600, color: s.color }}>{s.label}</span>
       </div>
       <div style={{ fontSize: 13, color: T.muted, marginTop: 4, display: "grid", gap: 2 }}>
-        <span>🧑 {d.patient_nom}</span>
+        <span>🧑 {d.soigne_nom} {d.pour_autrui ? `(${d.soigne_lien}, ${d.soigne_age} ans)` : "(patient lui-même)"}</span>
         <span>📍 {d.patient_quartier}</span>
         <span>📞 {d.patient_telephone}</span>
         <span>🕒 {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
         {d.notes && <span style={{ fontStyle: "italic" }}>{d.notes}</span>}
       </div>
-      {action && <div style={{ marginTop: 10 }}>{action}</div>}
+
+      {detaillee && (d.soigne_atcd_medicaux || d.soigne_atcd_chirurgicaux || d.soigne_atcd_familiaux || d.soigne_allergies || d.soigne_tuteur_nom) && (
+        <div style={{ marginTop: 10, background: T.bgAlt, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, display: "grid", gap: 3 }}>
+          {d.soigne_atcd_medicaux && <span><strong>Médicaux :</strong> {d.soigne_atcd_medicaux}</span>}
+          {d.soigne_atcd_chirurgicaux && <span><strong>Chirurgicaux :</strong> {d.soigne_atcd_chirurgicaux}</span>}
+          {d.soigne_atcd_familiaux && <span><strong>Familiaux :</strong> {d.soigne_atcd_familiaux}</span>}
+          {d.soigne_allergies && <span><strong>Allergies :</strong> {d.soigne_allergies}</span>}
+          {d.soigne_tuteur_nom && <span><strong>Tuteur :</strong> {d.soigne_tuteur_nom} — {d.soigne_tuteur_telephone}</span>}
+        </div>
+      )}
+
+      {!detaillee && onAccepter && <div style={{ marginTop: 10 }}><button style={btnGhost()} onClick={onAccepter}>Accepter</button></div>}
+
+      {detaillee && d.statut === "acceptee" && (
+        <div style={{ marginTop: 12, borderTop: `1px solid ${T.line}`, paddingTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Constantes du patient</div>
+          {constantesEnregistrees ? (
+            <div style={{ fontSize: 12.5, color: T.muted, display: "grid", gap: 2, marginBottom: 10 }}>
+              <span>TA {d.constante_ta} · T° {d.constante_temp} · R {d.constante_resp} · Pls {d.constante_pouls} · SpO2 {d.constante_spo2}</span>
+              <span>État de conscience : {d.constante_conscience}</span>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+              <input style={inputStyle} placeholder="TA (ex. 12/8)" value={constantes.constante_ta} onChange={(e) => cc("constante_ta", e.target.value)} />
+              <input style={inputStyle} placeholder="T° (°C)" value={constantes.constante_temp} onChange={(e) => cc("constante_temp", e.target.value)} />
+              <input style={inputStyle} placeholder="R (resp/min)" value={constantes.constante_resp} onChange={(e) => cc("constante_resp", e.target.value)} />
+              <input style={inputStyle} placeholder="Pls (bpm)" value={constantes.constante_pouls} onChange={(e) => cc("constante_pouls", e.target.value)} />
+              <input style={inputStyle} placeholder="SpO2 (%)" value={constantes.constante_spo2} onChange={(e) => cc("constante_spo2", e.target.value)} />
+              <input style={inputStyle} placeholder="État de conscience" value={constantes.constante_conscience} onChange={(e) => cc("constante_conscience", e.target.value)} />
+            </div>
+          )}
+          {!constantesEnregistrees && (
+            <button style={btnGhost()} onClick={() => onEnregistrerConstantes(constantes)}>Enregistrer les constantes</button>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <button style={btnGhost(T.muted)} onClick={onTerminer}>Marquer terminée</button>
+            <button style={btnGhost(T.urgent)} onClick={() => { if (window.confirm("Annuler ce soin ? Une pénalité de -50% s'appliquera à votre prochain soin.")) onAnnuler(); }}>Annuler</button>
+            <button style={btnGhost(T.gold)} onClick={() => setAfficherSignal((v) => !v)}>Signaler</button>
+          </div>
+
+          {afficherSignal && (
+            <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
+              <Champ label="Motif du signalement">
+                <select style={inputStyle} value={motif} onChange={(e) => setMotif(e.target.value)}>
+                  <option>Patient/patiente coopérant(e)</option>
+                  <option>Effets secondaires</option>
+                  <option>Autres</option>
+                </select>
+              </Champ>
+              <Champ label="Détails"><textarea style={{ ...inputStyle, minHeight: 55 }} value={details} onChange={(e) => setDetails(e.target.value)} /></Champ>
+              <button style={btnPrimary()} onClick={() => { onSignaler(motif, details); setAfficherSignal(false); }}>Envoyer le signalement à l'administrateur</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {detaillee && d.signalement && (
+        <div style={{ marginTop: 10, fontSize: 12, color: T.gold }}>⚠ Signalé à l'administrateur — {d.signalement_motif}</div>
+      )}
+      {detaillee && d.statut === "annulee" && (
+        <div style={{ marginTop: 10, fontSize: 12, color: T.urgent }}>Soin annulé</div>
+      )}
     </div>
   );
 }
@@ -762,29 +987,70 @@ function AdminDash({ session }) {
       charger();
     } catch (e) { setErreur(e.message); }
   }
+  async function desactiver(id) {
+    if (!window.confirm("Désactiver ce compte ? La personne ne pourra plus se connecter.")) return;
+    try {
+      await profilesTable.update(`id=eq.${id}`, { supprime: true }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+  async function reactiver(id) {
+    try {
+      await profilesTable.update(`id=eq.${id}`, { supprime: false }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
 
   const terminees = demandes.filter((d) => d.statut === "terminee");
   const revenuSoins = terminees.reduce((s, d) => s + d.tarif_soin, 0);
   const commission = Math.round(revenuSoins * COMMISSION_TAUX);
   const revenuDeplacements = demandes.reduce((s, d) => s + (d.deplacement || 0), 0);
-  const enAttente = profils.filter((u) => !u.verified);
+  const enAttente = profils.filter((u) => !u.verified && !u.supprime);
+  const signalements = demandes.filter((d) => d.signalement);
+  const penalites = demandes.filter((d) => d.penalite_appliquee || d.statut === "annulee");
 
   if (chargement) return <Spinner />;
 
   return (
     <div>
       <ErreurTexte>{erreur}</ErreurTexte>
-      <Onglets items={[{ key: "apercu", label: "Aperçu" }, { key: "historique", label: "Historique" }, { key: "validations", label: `Validations (${enAttente.length})` }]} actif={onglet} onChange={setOnglet} />
+      <p style={{ fontSize: 11.5, color: T.muted, marginTop: -8, marginBottom: 16 }}>
+        Aucune donnée n'est jamais supprimée ici — les comptes désactivés et l'historique complet restent consultables en permanence.
+      </p>
+      <Onglets
+        items={[
+          { key: "apercu", label: "Aperçu" },
+          { key: "historique", label: "Historique" },
+          { key: "validations", label: `Validations (${enAttente.length})` },
+          { key: "comptes", label: "Comptes" },
+          { key: "signalements", label: `Signalements (${signalements.length})` },
+        ]}
+        actif={onglet} onChange={setOnglet}
+      />
+
       {onglet === "apercu" && (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-          {[["Demandes totales", demandes.length], ["Soins terminés", terminees.length], ["Commission (10%)", formatFCFA(commission)], ["Déplacements collectés", formatFCFA(revenuDeplacements)]].map(([label, val], i) => (
-            <div key={label} style={{ padding: "16px 18px", borderRight: i % 2 === 0 ? `1px solid ${T.line}` : "none", borderBottom: i < 2 ? `1px solid ${T.line}` : "none" }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: T.primary }}>{val}</div>
-              <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{label}</div>
+        <div>
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr", marginBottom: 16 }}>
+            {[["Demandes totales", demandes.length], ["Soins terminés", terminees.length], ["Commission (10%)", formatFCFA(commission)], ["Déplacements collectés", formatFCFA(revenuDeplacements)]].map(([label, val], i) => (
+              <div key={label} style={{ padding: "16px 18px", borderRight: i % 2 === 0 ? `1px solid ${T.line}` : "none", borderBottom: i < 2 ? `1px solid ${T.line}` : "none" }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: T.primary }}>{val}</div>
+                <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+          {penalites.length > 0 && (
+            <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "14px 16px" }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Pénalités relevées</div>
+              {penalites.map((d) => (
+                <div key={d.id} style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>
+                  {d.infirmier_nom || "infirmier"} — {d.statut === "annulee" ? "a annulé un soin accepté" : "soin payé à 50% (pénalité appliquée)"} · {d.soin}
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
+
       {onglet === "historique" && (
         demandes.length === 0 ? <VideMessage texte="Aucune demande enregistrée." /> :
         demandes.map((d) => (
@@ -794,34 +1060,94 @@ function AdminDash({ session }) {
               <span style={{ fontSize: 12.5, fontWeight: 600, color: STATUS[d.statut].color }}>{STATUS[d.statut].label}</span>
             </div>
             <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-              {d.patient_nom} · {d.infirmier_nom || "non assignée"} · {formatFCFA(d.total)}
+              Demandeur : {d.patient_nom} · Soigné(e) : {d.soigne_nom} ({d.soigne_lien}) · {d.infirmier_nom || "non assignée"} · {formatFCFA(d.total)}
               {d.statut === "terminee" && ` · commission ${formatFCFA(Math.round(d.tarif_soin * COMMISSION_TAUX))}`}
+              {d.penalite_appliquee && " · pénalité -50% appliquée"}
             </div>
-          </div>
-        ))
-      )}
-      {onglet === "validations" && (
-        enAttente.length === 0 ? <VideMessage texte="Aucune inscription en attente." /> :
-        enAttente.map((u) => (
-          <div key={u.id} style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10 }}>
-            <div>
-              <strong style={{ fontSize: 14.5 }}>{u.role === "infirmier" ? `${u.prenom} ${u.nom}` : u.nom}</strong>
-              <div style={{ fontSize: 12.5, color: T.muted }}>{u.role === "infirmier" ? "Infirmier" : "Patient"} · {u.email}</div>
-            </div>
-            {u.role === "infirmier" && (
-              <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
-                <span>{u.specialite} · {u.age} ans · {u.residence}</span>
-                <span>{u.telephone}</span>
-                <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
-                  <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_carte_url, session.token)}>Voir la carte de l'ordre</button>
-                  <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_diplome_url, session.token)}>Voir le diplôme</button>
-                </div>
+            {d.constante_ta && (
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
+                Constantes : TA {d.constante_ta} · T° {d.constante_temp} · R {d.constante_resp} · Pls {d.constante_pouls} · SpO2 {d.constante_spo2} · Conscience : {d.constante_conscience}
               </div>
             )}
-            <button style={{ ...btnGhost(T.primary), marginTop: 10 }} onClick={() => approuver(u.id)}>✓ Approuver</button>
+            {d.signalement && <div style={{ fontSize: 12, color: T.gold, marginTop: 4 }}>⚠ Signalé — {d.signalement_motif} : {d.signalement_details}</div>}
           </div>
         ))
       )}
+
+      {onglet === "validations" && (
+        enAttente.length === 0 ? <VideMessage texte="Aucune inscription en attente." /> :
+        enAttente.map((u) => <FicheCompte key={u.id} u={u} session={session} onApprouver={() => approuver(u.id)} />)
+      )}
+
+      {onglet === "comptes" && (
+        profils.length === 0 ? <VideMessage texte="Aucun compte." /> :
+        profils.filter((u) => u.role !== "admin").map((u) => (
+          <FicheCompte key={u.id} u={u} session={session} onDesactiver={() => desactiver(u.id)} onReactiver={() => reactiver(u.id)} />
+        ))
+      )}
+
+      {onglet === "signalements" && (
+        signalements.length === 0 ? <VideMessage texte="Aucun signalement." /> :
+        signalements.map((d) => (
+          <div key={d.id} style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10 }}>
+            <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Infirmier(ère) : {d.infirmier_nom} · Patient : {d.soigne_nom}</div>
+            <div style={{ fontSize: 13, color: T.gold, marginTop: 6 }}>Motif : {d.signalement_motif}</div>
+            {d.signalement_details && <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>{d.signalement_details}</div>}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function FicheCompte({ u, session, onApprouver, onDesactiver, onReactiver }) {
+  return (
+    <div style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10, opacity: u.supprime ? 0.55 : 1 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <strong style={{ fontSize: 14.5 }}>{u.role === "infirmier" ? `${u.prenom} ${u.nom}` : u.nom}</strong>
+          <div style={{ fontSize: 12.5, color: T.muted }}>
+            {u.role === "infirmier" ? "Infirmier" : "Patient"} · {u.email}
+            {u.supprime && " · désactivé"}
+            {!u.verified && !u.supprime && " · en attente"}
+          </div>
+        </div>
+      </div>
+
+      {u.role === "infirmier" && (
+        <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
+          <span>{u.specialite} · {u.age} ans · {u.residence}</span>
+          <span>{u.telephone}</span>
+          <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+            <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_carte_url, session.token)}>Voir la carte de l'ordre</button>
+            <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_diplome_url, session.token)}>Voir le diplôme</button>
+          </div>
+        </div>
+      )}
+
+      {u.role === "patient" && (
+        <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
+          <span>{u.sexe} · {u.age} ans · {u.nationalite} · {u.situation_matrimoniale}</span>
+          <span>{u.telephone} · {u.quartier}</span>
+          {u.tuteur_nom && <span>Tuteur : {u.tuteur_nom} — {u.tuteur_telephone}</span>}
+          {u.atcd_medicaux && <span>Antécédents médicaux : {u.atcd_medicaux}</span>}
+          {u.atcd_chirurgicaux && <span>Antécédents chirurgicaux : {u.atcd_chirurgicaux}</span>}
+          {u.atcd_familiaux && <span>Antécédents familiaux : {u.atcd_familiaux}</span>}
+          {u.allergies && <span>Allergies : {u.allergies}</span>}
+          {u.photo_piece_url && (
+            <div style={{ marginTop: 6 }}>
+              <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_piece_url, session.token)}>Voir la pièce d'identité</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+        {onApprouver && <button style={{ ...btnGhost(T.primary) }} onClick={onApprouver}>✓ Approuver</button>}
+        {onDesactiver && !u.supprime && <button style={btnGhost(T.urgent)} onClick={onDesactiver}>Désactiver le compte</button>}
+        {onReactiver && u.supprime && <button style={btnGhost(T.primary)} onClick={onReactiver}>Réactiver le compte</button>}
+      </div>
     </div>
   );
 }
