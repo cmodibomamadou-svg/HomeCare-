@@ -419,7 +419,12 @@ function InfirmierAuth({ onRetour, onConnecter }) {
         const cheminCarte = await uploadDocument(userId, fichierCarte, "carte", token);
         const cheminDiplome = await uploadDocument(userId, fichierDiplome, "diplome", token);
         await profilesTable.insert(
-          { id: userId, role: "infirmier", email: email.trim().toLowerCase(), verified: false, age: Number(form.age), ...form, photo_carte_url: cheminCarte, photo_diplome_url: cheminDiplome },
+          {
+            id: userId, role: "infirmier", email: email.trim().toLowerCase(), verified: false,
+            nom: form.nom, prenom: form.prenom, age: Number(form.age), telephone: form.telephone,
+            residence: form.residence, specialite: form.specialite, diplome_reconnu: form.diplomeReconnu,
+            photo_carte_url: cheminCarte, photo_diplome_url: cheminDiplome,
+          },
           token
         );
         setSucces(true);
