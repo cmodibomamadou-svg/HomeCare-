@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HomeCare — Soins à domicile Bamako</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #F6F3ED; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+/* ---------------------------------------------------------------
+   Connexion Supabase (API REST directe)
+--------------------------------------------------------------- */
+
+const SUPABASE_URL = "https://hhjgnzyzvcwsuwmhnsiv.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_YcVccuCkE6BfCkTatuZ3BA_qewNf_Ix";
+
+async function supaFetch(path, { method = "GET", body, token, extraHeaders = {} } = {}) {
+  const res = await fetch(`${SUPABASE_URL}${path}`, {
+    method,
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${token || SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...extraHeaders,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const texte = await res.text();
+  const data = texte ? JSON.parse(texte) : null;
+  if (!res.ok) {
+    throw new Error((data && (data.msg || data.message || data.error_description)) || "Erreur inconnue");
+  }
+  return data;
+}
+
+const auth = {
+  signUp: (email, password) => supaFetch("/auth/v1/signup", { method: "POST", body: { email, password } }),
+  signIn: (email, password) =>
+    supaFetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } }),
+};
+
+function rest(table) {
+  return {
+    select: (query, token) => supaFetch(`/rest/v1/${table}?${query}`, { token }),
+    insert: (row, token) => supaFetch(`/rest/v1/${table}`, { method: "POST", body: [row], token }),
+    update: (query, patch, token) =>
+      supaFetch(`/rest/v1/${table}?${query}`, { method: "PATCH", body: patch, token }),
+  };
+}
+const profilesTable = rest("profiles");
+const demandesTable = rest("demandes");
+
+async function uploadDocument(userId, file, label, token) {
+  const chemin = `${userId}/${label}-${Date.now()}-${file.name}`;
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/documents/${chemin}`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type },
+    body: file,
+  });
+  if (!res.ok) throw new Error("Échec de l'envoi du fichier");
+  return chemin;
+}
+
+async function ouvrirDocument(chemin, token) {
+  const res = await supaFetch(`/storage/v1/object/sign/documents/${chemin}`, {
+    method: "POST",
+    body: { expiresIn: 300 },
+    token,
+  });
+  window.open(`${SUPABASE_URL}${res.signedURL}`, "_blank");
+}
+
+/* ---------------------------------------------------------------
+   Données de référence
+--------------------------------------------------------------- */
+
+const COMMISSION_TAUX = 0.10;
+const DEPLACEMENT = 2000;
+
+const TARIFS = {
+  "Perfusion": 3000,
+  "Injection": 2000,
+  "Pansement": 3000,
+  "Nursing (12h)": 15000,
+  "Rééducation / Kinésithérapie": 5000,
+  "Diagnostic infirmier / Consultation à domicile": 5000,
+  "Prélèvement sanguin": 2000,
+  "Counseling planification familiale": 20000,
+};
+
+const PAIEMENT = { orange: "84 24 32 97", wave: "65 60 94 18" };
+
+const STATUS = {
+  attente: { label: "En attente", color: "#C79A4B" },
+  acceptee: { label: "Acceptée", color: "#3F6E5E" },
+  terminee: { label: "Terminée", color: "#7C8880" },
+};
+
+function formatFCFA(n) {
+  return n.toLocaleString("fr-FR") + " FCFA";
+}
+
+/* ---------------------------------------------------------------
+   Styles partagés
+--------------------------------------------------------------- */
+
+const T = {
+  bg: "#F6F3ED", bgAlt: "#EAF0EA", ink: "#263129", muted: "#7C8880",
+  primary: "#3F6E5E", primaryLight: "#E7EFEA", gold: "#B98A3A", goldBg: "#F5EBD7",
+  urgent: "#B8483D", card: "#FFFFFF", line: "#E1DACB",
+};
+
+const inputStyle = {
+  width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 15,
+  border: `1px solid ${T.line}`, borderRadius: 8, background: "#FFFEFC", color: T.ink,
+};
+
+function btnPrimary(extra) {
+  return { background: T.primary, color: "#F6F3ED", border: "none", borderRadius: 8, padding: "12px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", ...extra };
+}
+function btnGhost(color = T.primary) {
+  return { background: "none", border: `1px solid ${color}`, color, borderRadius: 7, padding: "7px 14px", fontSize: 13.5, cursor: "pointer" };
+}
+function Champ({ label, children }) {
+  return (
+    <label style={{ display: "block", marginBottom: 16 }}>
+      <span style={{ display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 6 }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+function Brand({ size = 26 }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+      <div style={{ width: size + 12, height: size + 12, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <span style={{ fontSize: size * 0.6, color: T.primary, lineHeight: 1 }}>♥</span>
+      </div>
+      <span style={{ fontFamily: 'Georgia, "Iowan Old Style", serif', fontSize: size, fontWeight: 500, color: T.ink, letterSpacing: "-0.01em" }}>HomeCare</span>
+    </div>
+  );
+}
+function RetourLink({ onClick, children = "Retour" }) {
+  return (
+    <button onClick={onClick} style={{ background: "none", border: "none", color: T.muted, fontSize: 13.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: 0, marginBottom: 18 }}>
+      <span>‹</span> {children}
+    </button>
+  );
+}
+const titreStyle = { fontFamily: 'Georgia, "Iowan Old Style", serif', fontSize: 22, fontWeight: 500, margin: "0 0 6px" };
+function Onglets({ items, actif, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20, overflowX: "auto" }}>
+      {items.map((it) => (
+        <button key={it.key} onClick={() => onChange(it.key)} style={{ background: "none", border: "none", padding: "0 0 11px", fontSize: 14, whiteSpace: "nowrap", fontWeight: actif === it.key ? 600 : 400, color: actif === it.key ? T.ink : T.muted, borderBottom: actif === it.key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 }}>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+function VideMessage({ texte }) {
+  return <div style={{ color: T.muted, fontSize: 14, padding: "10px 0" }}>{texte}</div>;
+}
+function ErreurTexte({ children }) {
+  if (!children) return null;
+  return <p style={{ fontSize: 13, color: T.urgent, marginTop: -8, marginBottom: 14 }}>{children}</p>;
+}
+function Spinner() {
+  return <div style={{ width: 18, height: 18, border: `2px solid ${T.line}`, borderTopColor: T.primary, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />;
+}
+
+/* ---------------------------------------------------------------
+   App racine
+--------------------------------------------------------------- */
+
+function App() {
+  const [session, setSession] = useState(null);
+  const [screen, setScreen] = useState("accueil");
+  const [roleEnCours, setRoleEnCours] = useState(null);
+
+  function retourAccueil() {
+    setScreen("accueil");
+    setRoleEnCours(null);
+  }
+
+  async function connecter(email, password, roleAttendu) {
+    const res = await auth.signIn(email.trim().toLowerCase(), password);
+    const token = res.access_token;
+    const userId = res.user.id;
+    const rows = await profilesTable.select(`id=eq.${userId}&select=*`, token);
+    const profile = rows[0];
+    if (!profile) throw new Error("Profil introuvable.");
+    if (roleAttendu && profile.role !== roleAttendu) throw new Error("Ce compte n'a pas ce rôle.");
+    setSession({ token, userId, profile });
+    retourAccueil();
+  }
+
+  function seDeconnecter() {
+    setSession(null);
+    retourAccueil();
+  }
+
+  if (session?.profile.role === "admin") {
+    return <Shell><TopBar label="Espace administrateur" onLogout={seDeconnecter} /><AdminDash session={session} /></Shell>;
+  }
+  if (session?.profile.role === "patient") {
+    return <Shell><TopBar label={`Bonjour, ${session.profile.nom || ""}`} onLogout={seDeconnecter} /><PatientEspace session={session} /></Shell>;
+  }
+  if (session?.profile.role === "infirmier") {
+    return <Shell><TopBar label={`Bonjour, ${session.profile.prenom || ""}`} onLogout={seDeconnecter} /><InfirmierEspace session={session} /></Shell>;
+  }
+
+  return (
+    <Shell>
+      {screen === "accueil" && (
+        <Accueil
+          onChoisirRole={(role) => { setRoleEnCours(role); setScreen("auth"); }}
+          onAdmin={() => { setRoleEnCours("admin"); setScreen("auth"); }}
+        />
+      )}
+      {screen === "auth" && roleEnCours === "patient" && (
+        <PatientAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "patient")} />
+      )}
+      {screen === "auth" && roleEnCours === "infirmier" && (
+        <InfirmierAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "infirmier")} />
+      )}
+      {screen === "auth" && roleEnCours === "admin" && (
+        <AdminAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "admin")} />
+      )}
+      <p style={{ marginTop: 40, fontSize: 11, color: "#A69C8D", lineHeight: 1.6, textAlign: "center" }}>
+        HomeCare — connecté à une base de données réelle (Supabase).
+      </p>
+    </Shell>
+  );
+}
+
+function Shell({ children }) {
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: 'ui-sans-serif, -apple-system, "Segoe UI", sans-serif' }}>
+      <div style={{ maxWidth: 620, margin: "0 auto", padding: "26px 20px 50px" }}>{children}</div>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid ${T.primary}; outline-offset: 2px; }
+      `}</style>
+    </div>
+  );
+}
+function TopBar({ label, onLogout }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26 }}>
+      <Brand size={22} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 13.5, color: T.muted }}>{label}</span>
+        <button onClick={onLogout} style={btnGhost(T.muted)}>Sortir</button>
+      </div>
+    </div>
+  );
+}
+
+function Accueil({ onChoisirRole, onAdmin }) {
+  return (
+    <div>
+      <div style={{ background: `linear-gradient(180deg, ${T.bgAlt}, ${T.bg})`, borderRadius: 16, padding: "34px 24px", marginBottom: 26, textAlign: "center" }}>
+        <Brand size={30} />
+        <p style={{ marginTop: 14, fontSize: 15, color: "#4B5A4F", lineHeight: 1.6, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
+          Des soins infirmiers, chez vous, avec sérénité. Prenez rendez-vous avec un infirmier vérifié pour vos soins à domicile à Bamako.
+        </p>
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        <RoleCard emoji="🧑" titre="Je suis patient" desc="Demander un soin à domicile" onClick={() => onChoisirRole("patient")} />
+        <RoleCard emoji="🩺" titre="Je suis infirmier" desc="Recevoir et suivre des demandes de soins" onClick={() => onChoisirRole("infirmier")} />
+      </div>
+      <div style={{ textAlign: "center", marginTop: 34 }}>
+        <button onClick={onAdmin} style={{ background: "none", border: "none", color: "#B4AC9C", fontSize: 11.5, cursor: "pointer", padding: 4 }}>Administration</button>
+      </div>
+    </div>
+  );
+}
+function RoleCard({ emoji, titre, desc, onClick }) {
+  return (
+    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 14, textAlign: "left", background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: "16px 18px", cursor: "pointer" }}>
+      <div style={{ width: 40, height: 40, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 18 }}>{emoji}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 600, fontSize: 15.5 }}>{titre}</div>
+        <div style={{ fontSize: 13, color: T.muted, marginTop: 1 }}>{desc}</div>
+      </div>
+      <span style={{ color: T.muted, fontSize: 18 }}>›</span>
+    </button>
+  );
+}
+
+function AdminAuth({ onRetour, onConnecter }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [erreur, setErreur] = useState("");
+  const [chargement, setChargement] = useState(false);
+
+  async function soumettre(e) {
+    e.preventDefault();
+    setErreur(""); setChargement(true);
+    try { await onConnecter(email, password); }
+    catch (err) { setErreur(err.message); }
+    finally { setChargement(false); }
+  }
+
+  return (
+    <div>
+      <RetourLink onClick={onRetour} />
+      <h2 style={titreStyle}>Connexion administrateur</h2>
+      <form onSubmit={soumettre}>
+        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
+        <Champ label="Mot de passe"><input style={inputStyle} type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
+        <ErreurTexte>{erreur}</ErreurTexte>
+        <button type="submit" disabled={chargement} style={btnPrimary()}>{chargement ? "Connexion…" : "Se connecter"}</button>
+      </form>
+    </div>
+  );
+}
+
+function PatientAuth({ onRetour, onConnecter }) {
+  const [mode, setMode] = useState("connexion");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [form, setForm] = useState({ nom: "", telephone: "", quartier: "" });
+  const [erreur, setErreur] = useState("");
+  const [chargement, setChargement] = useState(false);
+  const [succes, setSucces] = useState(false);
+  const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function soumettre(e) {
+    e.preventDefault();
+    setErreur(""); setChargement(true);
+    try {
+      if (mode === "connexion") {
+        await onConnecter(email, password);
+      } else {
+        const res = await auth.signUp(email.trim().toLowerCase(), password);
+        const token = res.access_token;
+        if (!token) throw new Error("Confirmation e-mail encore activée côté Supabase — désactive-la.");
+        await profilesTable.insert({ id: res.user.id, role: "patient", email: email.trim().toLowerCase(), verified: false, ...form }, token);
+        setSucces(true);
+      }
+    } catch (err) { setErreur(err.message); }
+    finally { setChargement(false); }
+  }
+
+  if (succes) {
+    return (
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: 28, color: T.primary }}>✓</div>
+        <h2 style={{ ...titreStyle, textAlign: "center", marginTop: 12 }}>Compte créé</h2>
+        <p style={{ fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" }}>
+          Ton compte est en attente de validation par l'administrateur.
+        </p>
+        <button onClick={onRetour} style={btnPrimary()}>Retour à l'accueil</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <RetourLink onClick={onRetour} />
+      <h2 style={titreStyle}>Espace patient</h2>
+      <ModeToggle mode={mode} onChange={setMode} />
+      <form onSubmit={soumettre}>
+        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
+        <Champ label="Mot de passe"><input style={inputStyle} type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
+        {mode === "inscription" && (
+          <>
+            <Champ label="Nom complet"><input style={inputStyle} required value={form.nom} onChange={(e) => c("nom", e.target.value)} /></Champ>
+            <Champ label="Téléphone"><input style={inputStyle} required value={form.telephone} onChange={(e) => c("telephone", e.target.value)} /></Champ>
+            <Champ label="Quartier / résidence à Bamako"><input style={inputStyle} required value={form.quartier} onChange={(e) => c("quartier", e.target.value)} /></Champ>
+          </>
+        )}
+        <ErreurTexte>{erreur}</ErreurTexte>
+        <button type="submit" disabled={chargement} style={btnPrimary()}>{chargement ? "Un instant…" : mode === "connexion" ? "Se connecter" : "Créer mon compte"}</button>
+      </form>
+    </div>
+  );
+}
+
+function InfirmierAuth({ onRetour, onConnecter }) {
+  const [mode, setMode] = useState("connexion");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [form, setForm] = useState({ nom: "", prenom: "", age: "", telephone: "", residence: "", specialite: "", diplomeReconnu: false });
+  const [fichierCarte, setFichierCarte] = useState(null);
+  const [fichierDiplome, setFichierDiplome] = useState(null);
+  const [erreur, setErreur] = useState("");
+  const [chargement, setChargement] = useState(false);
+  const [succes, setSucces] = useState(false);
+  const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function soumettre(e) {
+    e.preventDefault();
+    setErreur(""); setChargement(true);
+    try {
+      if (mode === "connexion") {
+        await onConnecter(email, password);
+      } else {
+        if (!fichierCarte || !fichierDiplome) throw new Error("Merci de joindre les deux documents.");
+        const res = await auth.signUp(email.trim().toLowerCase(), password);
+        const token = res.access_token;
+        if (!token) throw new Error("Confirmation e-mail encore activée côté Supabase — désactive-la.");
+        const userId = res.user.id;
+        const cheminCarte = await uploadDocument(userId, fichierCarte, "carte", token);
+        const cheminDiplome = await uploadDocument(userId, fichierDiplome, "diplome", token);
+        await profilesTable.insert(
+          { id: userId, role: "infirmier", email: email.trim().toLowerCase(), verified: false, age: Number(form.age), ...form, photo_carte_url: cheminCarte, photo_diplome_url: cheminDiplome },
+          token
+        );
+        setSucces(true);
+      }
+    } catch (err) { setErreur(err.message); }
+    finally { setChargement(false); }
+  }
+
+  if (succes) {
+    return (
+      <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div style={{ fontSize: 28, color: T.primary }}>✓</div>
+        <h2 style={{ ...titreStyle, textAlign: "center", marginTop: 12 }}>Compte créé</h2>
+        <p style={{ fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" }}>
+          Ton compte et tes documents sont en attente de validation par l'administrateur.
+        </p>
+        <button onClick={onRetour} style={btnPrimary()}>Retour à l'accueil</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <RetourLink onClick={onRetour} />
+      <h2 style={titreStyle}>Espace infirmier</h2>
+      <ModeToggle mode={mode} onChange={setMode} />
+      <form onSubmit={soumettre}>
+        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
+        <Champ label="Mot de passe"><input style={inputStyle} type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
+        {mode === "inscription" && (
+          <>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}><Champ label="Nom"><input style={inputStyle} required value={form.nom} onChange={(e) => c("nom", e.target.value)} /></Champ></div>
+              <div style={{ flex: 1 }}><Champ label="Prénom"><input style={inputStyle} required value={form.prenom} onChange={(e) => c("prenom", e.target.value)} /></Champ></div>
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ flex: 1 }}><Champ label="Âge"><input style={inputStyle} required type="number" min="18" value={form.age} onChange={(e) => c("age", e.target.value)} /></Champ></div>
+              <div style={{ flex: 2 }}><Champ label="Téléphone"><input style={inputStyle} required value={form.telephone} onChange={(e) => c("telephone", e.target.value)} /></Champ></div>
+            </div>
+            <Champ label="Résidence"><input style={inputStyle} required value={form.residence} onChange={(e) => c("residence", e.target.value)} /></Champ>
+            <Champ label="Spécialité / filière étudiée"><input style={inputStyle} required value={form.specialite} onChange={(e) => c("specialite", e.target.value)} /></Champ>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, fontSize: 14 }}>
+              <input type="checkbox" required checked={form.diplomeReconnu} onChange={(e) => c("diplomeReconnu", e.target.checked)} />
+              Je certifie que mon diplôme est reconnu par l'État
+            </label>
+            <FichierChamp label="Photo de la carte de l'ordre des infirmiers" fichier={fichierCarte} onChange={setFichierCarte} />
+            <FichierChamp label="Photo du diplôme" fichier={fichierDiplome} onChange={setFichierDiplome} />
+          </>
+        )}
+        <ErreurTexte>{erreur}</ErreurTexte>
+        <button type="submit" disabled={chargement} style={btnPrimary({ marginTop: 4 })}>{chargement ? "Un instant…" : mode === "connexion" ? "Se connecter" : "Créer mon compte"}</button>
+      </form>
+    </div>
+  );
+}
+
+function ModeToggle({ mode, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20 }}>
+      {[["connexion", "Se connecter"], ["inscription", "Créer un compte"]].map(([key, label]) => (
+        <button key={key} onClick={() => onChange(key)} type="button" style={{ background: "none", border: "none", padding: "0 0 11px", fontSize: 14, fontWeight: mode === key ? 600 : 400, color: mode === key ? T.ink : T.muted, borderBottom: mode === key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 }}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+function FichierChamp({ label, fichier, onChange }) {
+  return (
+    <Champ label={label}>
+      <label style={{ display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "12px 14px", cursor: "pointer", background: "#FFFEFC" }}>
+        <span>{fichier ? "📄" : "📎"}</span>
+        <span style={{ fontSize: 13.5, color: fichier ? T.ink : T.muted }}>{fichier ? fichier.name : "Choisir un fichier"}</span>
+        <input type="file" accept="image/*" onChange={(e) => onChange(e.target.files[0] || null)} style={{ display: "none" }} />
+      </label>
+    </Champ>
+  );
+}
+
+function PatientEspace({ session }) {
+  const [onglet, setOnglet] = useState("nouvelle");
+  const [form, setForm] = useState({ soin: Object.keys(TARIFS)[0], heure: "", notes: "", urgent: false });
+  const [dernier, setDernier] = useState(null);
+  const [demandes, setDemandes] = useState([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState("");
+  const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  async function charger() {
+    setChargement(true);
+    try {
+      const rows = await demandesTable.select(`patient_id=eq.${session.userId}&order=created_at.desc&select=*`, session.token);
+      setDemandes(rows);
+    } catch (e) { setErreur(e.message); }
+    finally { setChargement(false); }
+  }
+  useEffect(() => { charger(); }, [onglet]);
+
+  const tarifSoin = TARIFS[form.soin];
+  const total = tarifSoin + DEPLACEMENT;
+
+  async function envoyer(e) {
+    e.preventDefault();
+    if (!form.heure) return;
+    try {
+      await demandesTable.insert({
+        patient_id: session.userId,
+        patient_nom: session.profile.nom,
+        patient_telephone: session.profile.telephone,
+        patient_quartier: session.profile.quartier,
+        soin: form.soin, tarif_soin: tarifSoin, deplacement: DEPLACEMENT, total,
+        heure: form.heure, notes: form.notes, urgent: form.urgent, statut: "attente",
+      }, session.token);
+      setDernier({ ...form, tarifSoin, total });
+    } catch (err) { setErreur(err.message); }
+  }
+
+  return (
+    <div>
+      <Onglets items={[{ key: "nouvelle", label: "Nouvelle demande" }, { key: "historique", label: "Mes demandes" }]} actif={onglet} onChange={setOnglet} />
+      <ErreurTexte>{erreur}</ErreurTexte>
+      {onglet === "nouvelle" && (
+        <div>
+          {!dernier ? (
+            <form onSubmit={envoyer}>
+              <Champ label="Type de soin">
+                <select style={inputStyle} value={form.soin} onChange={(e) => c("soin", e.target.value)}>
+                  {Object.keys(TARIFS).map((s) => <option key={s} value={s}>{s} — {formatFCFA(TARIFS[s])}</option>)}
+                </select>
+              </Champ>
+              <Champ label="Date et heure souhaitées"><input style={inputStyle} type="datetime-local" required value={form.heure} onChange={(e) => c("heure", e.target.value)} /></Champ>
+              <Champ label="Informations complémentaires (facultatif)"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.notes} onChange={(e) => c("notes", e.target.value)} /></Champ>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14 }}>
+                <input type="checkbox" checked={form.urgent} onChange={(e) => c("urgent", e.target.checked)} /> Ce soin est urgent
+              </label>
+              <div style={{ background: T.primaryLight, borderRadius: 10, padding: "14px 16px", marginBottom: 20, fontSize: 14 }}>
+                <Ligne label={form.soin} valeur={formatFCFA(tarifSoin)} />
+                <Ligne label="Déplacement (dû même si le soin n'est pas réalisé)" valeur={formatFCFA(DEPLACEMENT)} />
+                <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8 }}><Ligne label="Total" valeur={formatFCFA(total)} fort /></div>
+              </div>
+              <button type="submit" style={btnPrimary()}>Envoyer la demande</button>
+            </form>
+          ) : (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.primary, fontSize: 15, marginBottom: 16 }}>✓ Demande envoyée</div>
+              <PaiementInfo total={dernier.total} />
+              <button style={{ ...btnGhost(), marginTop: 18 }} onClick={() => { setDernier(null); charger(); }}>Faire une autre demande</button>
+            </div>
+          )}
+        </div>
+      )}
+      {onglet === "historique" && (
+        chargement ? <Spinner /> :
+        demandes.length === 0 ? <VideMessage texte="Aucune demande pour le moment." /> :
+        demandes.map((d) => <DemandeRowPatient key={d.id} d={d} />)
+      )}
+    </div>
+  );
+}
+function Ligne({ label, valeur, fort }) {
+  return <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontWeight: fort ? 700 : 400 }}><span>{label}</span><span>{valeur}</span></div>;
+}
+function PaiementInfo({ total }) {
+  return (
+    <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ fontWeight: 600, marginBottom: 10 }}>💳 Paiement — {formatFCFA(total)}</div>
+      <Ligne label="Orange Money" valeur={PAIEMENT.orange} />
+      <Ligne label="Wave" valeur={PAIEMENT.wave} />
+    </div>
+  );
+}
+function DemandeRowPatient({ d }) {
+  const s = STATUS[d.statut];
+  return (
+    <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: s.color }}>{s.label}</span>
+      </div>
+      <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+        {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {formatFCFA(d.total)}
+        {d.infirmier_nom ? ` · ${d.infirmier_nom}` : ""}
+      </div>
+    </div>
+  );
+}
+
+function InfirmierEspace({ session }) {
+  const [onglet, setOnglet] = useState("disponibles");
+  const [demandes, setDemandes] = useState([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState("");
+
+  async function charger() {
+    setChargement(true);
+    try {
+      const rows = await demandesTable.select(`or=(statut.eq.attente,infirmier_id.eq.${session.userId})&order=created_at.desc&select=*`, session.token);
+      setDemandes(rows);
+    } catch (e) { setErreur(e.message); }
+    finally { setChargement(false); }
+  }
+  useEffect(() => { if (session.profile.verified) charger(); }, [onglet]);
+
+  if (!session.profile.verified) {
+    return (
+      <div style={{ textAlign: "center", padding: "30px 10px" }}>
+        <div style={{ fontSize: 28 }}>⚠</div>
+        <p style={{ marginTop: 12, color: "#4B5A4F", fontSize: 14.5 }}>Votre compte est en attente de validation par l'administrateur.</p>
+      </div>
+    );
+  }
+
+  async function accepter(id) {
+    try {
+      await demandesTable.update(`id=eq.${id}`, { statut: "acceptee", infirmier_id: session.userId, infirmier_nom: `${session.profile.prenom} ${session.profile.nom}` }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+  async function terminer(id) {
+    try {
+      await demandesTable.update(`id=eq.${id}`, { statut: "terminee" }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+
+  const disponibles = demandes.filter((d) => d.statut === "attente");
+  const mesInterventions = demandes.filter((d) => d.infirmier_id === session.userId);
+  const gains = mesInterventions.filter((d) => d.statut === "terminee").reduce((s, d) => s + Math.round(d.tarif_soin * (1 - COMMISSION_TAUX)) + d.deplacement, 0);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, fontSize: 13.5, color: T.muted }}>
+        <span>{session.profile.specialite}</span><span>·</span><span>{session.profile.residence}</span>
+      </div>
+      <div style={{ background: T.primaryLight, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13.5, color: "#4B5A4F" }}>Vos gains cumulés (soins terminés)</span>
+        <strong style={{ fontSize: 16, color: T.primary }}>{formatFCFA(gains)}</strong>
+      </div>
+      <ErreurTexte>{erreur}</ErreurTexte>
+      <Onglets items={[{ key: "disponibles", label: `Disponibles (${disponibles.length})` }, { key: "interventions", label: "Mes interventions" }]} actif={onglet} onChange={setOnglet} />
+      {chargement ? <Spinner /> : onglet === "disponibles" ? (
+        disponibles.length === 0 ? <VideMessage texte="Aucune demande disponible." /> :
+        disponibles.map((d) => <DemandeRowInfirmier key={d.id} d={d} action={<button style={btnGhost()} onClick={() => accepter(d.id)}>Accepter</button>} />)
+      ) : (
+        mesInterventions.length === 0 ? <VideMessage texte="Aucune intervention." /> :
+        mesInterventions.map((d) => <DemandeRowInfirmier key={d.id} d={d} action={d.statut === "acceptee" ? <button style={btnGhost(T.muted)} onClick={() => terminer(d.id)}>Marquer terminée</button> : null} />)
+      )}
+    </div>
+  );
+}
+function DemandeRowInfirmier({ d, action }) {
+  const s = STATUS[d.statut];
+  return (
+    <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: s.color }}>{s.label}</span>
+      </div>
+      <div style={{ fontSize: 13, color: T.muted, marginTop: 4, display: "grid", gap: 2 }}>
+        <span>🧑 {d.patient_nom}</span>
+        <span>📍 {d.patient_quartier}</span>
+        <span>📞 {d.patient_telephone}</span>
+        <span>🕒 {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+        {d.notes && <span style={{ fontStyle: "italic" }}>{d.notes}</span>}
+      </div>
+      {action && <div style={{ marginTop: 10 }}>{action}</div>}
+    </div>
+  );
+}
+
+function AdminDash({ session }) {
+  const [onglet, setOnglet] = useState("apercu");
+  const [demandes, setDemandes] = useState([]);
+  const [profils, setProfils] = useState([]);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState("");
+
+  async function charger() {
+    setChargement(true);
+    try {
+      const [d, p] = await Promise.all([
+        demandesTable.select("order=created_at.desc&select=*", session.token),
+        profilesTable.select("select=*&order=created_at.desc", session.token),
+      ]);
+      setDemandes(d); setProfils(p);
+    } catch (e) { setErreur(e.message); }
+    finally { setChargement(false); }
+  }
+  useEffect(() => { charger(); }, []);
+
+  async function approuver(id) {
+    try {
+      await profilesTable.update(`id=eq.${id}`, { verified: true }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
+
+  const terminees = demandes.filter((d) => d.statut === "terminee");
+  const revenuSoins = terminees.reduce((s, d) => s + d.tarif_soin, 0);
+  const commission = Math.round(revenuSoins * COMMISSION_TAUX);
+  const revenuDeplacements = demandes.reduce((s, d) => s + (d.deplacement || 0), 0);
+  const enAttente = profils.filter((u) => !u.verified);
+
+  if (chargement) return <Spinner />;
+
+  return (
+    <div>
+      <ErreurTexte>{erreur}</ErreurTexte>
+      <Onglets items={[{ key: "apercu", label: "Aperçu" }, { key: "historique", label: "Historique" }, { key: "validations", label: `Validations (${enAttente.length})` }]} actif={onglet} onChange={setOnglet} />
+      {onglet === "apercu" && (
+        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          {[["Demandes totales", demandes.length], ["Soins terminés", terminees.length], ["Commission (10%)", formatFCFA(commission)], ["Déplacements collectés", formatFCFA(revenuDeplacements)]].map(([label, val], i) => (
+            <div key={label} style={{ padding: "16px 18px", borderRight: i % 2 === 0 ? `1px solid ${T.line}` : "none", borderBottom: i < 2 ? `1px solid ${T.line}` : "none" }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: T.primary }}>{val}</div>
+              <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {onglet === "historique" && (
+        demandes.length === 0 ? <VideMessage texte="Aucune demande enregistrée." /> :
+        demandes.map((d) => (
+          <div key={d.id} style={{ borderLeft: `3px solid ${STATUS[d.statut].color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
+              <span style={{ fontSize: 12.5, fontWeight: 600, color: STATUS[d.statut].color }}>{STATUS[d.statut].label}</span>
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+              {d.patient_nom} · {d.infirmier_nom || "non assignée"} · {formatFCFA(d.total)}
+              {d.statut === "terminee" && ` · commission ${formatFCFA(Math.round(d.tarif_soin * COMMISSION_TAUX))}`}
+            </div>
+          </div>
+        ))
+      )}
+      {onglet === "validations" && (
+        enAttente.length === 0 ? <VideMessage texte="Aucune inscription en attente." /> :
+        enAttente.map((u) => (
+          <div key={u.id} style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10 }}>
+            <div>
+              <strong style={{ fontSize: 14.5 }}>{u.role === "infirmier" ? `${u.prenom} ${u.nom}` : u.nom}</strong>
+              <div style={{ fontSize: 12.5, color: T.muted }}>{u.role === "infirmier" ? "Infirmier" : "Patient"} · {u.email}</div>
+            </div>
+            {u.role === "infirmier" && (
+              <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
+                <span>{u.specialite} · {u.age} ans · {u.residence}</span>
+                <span>{u.telephone}</span>
+                <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                  <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_carte_url, session.token)}>Voir la carte de l'ordre</button>
+                  <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_diplome_url, session.token)}>Voir le diplôme</button>
+                </div>
+              </div>
+            )}
+            <button style={{ ...btnGhost(T.primary), marginTop: 10 }} onClick={() => approuver(u.id)}>✓ Approuver</button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
