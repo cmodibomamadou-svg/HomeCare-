@@ -500,12 +500,18 @@ function FichierChamp({ label, fichier, onChange }) {
 
 function PatientEspace({ session }) {
   const [onglet, setOnglet] = useState("nouvelle");
-  const [form, setForm] = useState({ soin: Object.keys(TARIFS)[0], heure: "", notes: "", urgent: false });
+  const [form, setForm] = useState({ soins: [], heure: "", notes: "", urgent: false });
   const [dernier, setDernier] = useState(null);
   const [demandes, setDemandes] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState("");
   const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  function basculerSoin(s) {
+    setForm((f) => ({
+      ...f,
+      soins: f.soins.includes(s) ? f.soins.filter((x) => x !== s) : [...f.soins, s],
+    }));
+  }
 
   async function charger() {
     setChargement(true);
@@ -517,12 +523,12 @@ function PatientEspace({ session }) {
   }
   useEffect(() => { charger(); }, [onglet]);
 
-  const tarifSoin = TARIFS[form.soin];
-  const total = tarifSoin + DEPLACEMENT;
+  const tarifSoin = form.soins.reduce((s, nom) => s + TARIFS[nom], 0);
+  const total = form.soins.length ? tarifSoin + DEPLACEMENT : 0;
 
   async function envoyer(e) {
     e.preventDefault();
-    if (!form.heure) return;
+    if (!form.heure || form.soins.length === 0) return;
     setErreur("");
     try {
       await demandesTable.insert({
@@ -530,7 +536,7 @@ function PatientEspace({ session }) {
         patient_nom: session.profile.nom,
         patient_telephone: session.profile.telephone,
         patient_quartier: session.profile.quartier,
-        soin: form.soin, tarif_soin: tarifSoin, deplacement: DEPLACEMENT, total,
+        soin: form.soins.join(", "), tarif_soin: tarifSoin, deplacement: DEPLACEMENT, total,
         heure: form.heure, notes: form.notes, urgent: form.urgent, statut: "attente",
       }, session.token);
       setDernier({ ...form, tarifSoin, total });
@@ -545,10 +551,16 @@ function PatientEspace({ session }) {
         <div>
           {!dernier ? (
             <form onSubmit={envoyer}>
-              <Champ label="Type de soin">
-                <select style={inputStyle} value={form.soin} onChange={(e) => c("soin", e.target.value)}>
-                  {Object.keys(TARIFS).map((s) => <option key={s} value={s}>{s} — {formatFCFA(TARIFS[s])}</option>)}
-                </select>
+              <Champ label="Type(s) de soin — sélectionnez-en un ou plusieurs">
+                <div style={{ display: "grid", gap: 8 }}>
+                  {Object.keys(TARIFS).map((s) => (
+                    <label key={s} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${form.soins.includes(s) ? T.primary : T.line}`, borderRadius: 8, padding: "10px 12px", background: form.soins.includes(s) ? T.primaryLight : "#FFFEFC" }}>
+                      <input type="checkbox" checked={form.soins.includes(s)} onChange={() => basculerSoin(s)} />
+                      <span style={{ flex: 1, fontSize: 14 }}>{s}</span>
+                      <span style={{ fontSize: 13, color: T.muted }}>{formatFCFA(TARIFS[s])}</span>
+                    </label>
+                  ))}
+                </div>
               </Champ>
               <Champ label="Date et heure souhaitées"><input style={inputStyle} type="datetime-local" required value={form.heure} onChange={(e) => c("heure", e.target.value)} /></Champ>
               <Champ label="Informations complémentaires (facultatif)"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.notes} onChange={(e) => c("notes", e.target.value)} /></Champ>
@@ -556,11 +568,15 @@ function PatientEspace({ session }) {
                 <input type="checkbox" checked={form.urgent} onChange={(e) => c("urgent", e.target.checked)} /> Ce soin est urgent
               </label>
               <div style={{ background: T.primaryLight, borderRadius: 10, padding: "14px 16px", marginBottom: 20, fontSize: 14 }}>
-                <Ligne label={form.soin} valeur={formatFCFA(tarifSoin)} />
+                {form.soins.length === 0 ? (
+                  <span style={{ color: T.muted }}>Sélectionnez au moins un soin</span>
+                ) : (
+                  form.soins.map((s) => <Ligne key={s} label={s} valeur={formatFCFA(TARIFS[s])} />)
+                )}
                 <Ligne label="Déplacement (dû même si le soin n'est pas réalisé)" valeur={formatFCFA(DEPLACEMENT)} />
                 <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8 }}><Ligne label="Total" valeur={formatFCFA(total)} fort /></div>
               </div>
-              <button type="submit" style={btnPrimary()}>Envoyer la demande</button>
+              <button type="submit" disabled={form.soins.length === 0} style={btnPrimary(form.soins.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {})}>Envoyer la demande</button>
             </form>
           ) : (
             <div>
@@ -610,6 +626,9 @@ function PaiementInfo({ total }) {
       <div style={{ fontWeight: 600, marginBottom: 6 }}>💳 Paiement — {formatFCFA(total)}</div>
       <LigneCopiable label="Orange Money" valeur={PAIEMENT.orange} />
       <LigneCopiable label="Wave" valeur={PAIEMENT.wave} />
+      <p style={{ fontSize: 12.5, color: T.muted, marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
+        Copiez l'un des numéros ci-dessus pour effectuer la transaction par le moyen de paiement de votre choix.
+      </p>
     </div>
   );
 }
