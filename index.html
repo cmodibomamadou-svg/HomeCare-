@@ -103,6 +103,45 @@ const TARIFS = {
 
 const PAIEMENT = { orange: "84 24 32 97", wave: "65 60 94 18" };
 
+// ⚠️ Valeurs provisoires — à remplacer par les montants réels
+const FRAIS_RETRAIT_TAUX = 0.02; // 2% du sous-total soins
+const FONDS_SOUTIEN = 500; // FCFA, montant fixe
+
+const SOIN_CHAMPS = {
+  "Injection": [
+    { key: "produit", label: "Nom du produit", type: "text" },
+    { key: "type_injection", label: "Type d'injection", type: "select", options: ["Intramusculaire", "Intraveineuse", "Sous-cutanée", "Intradermique"] },
+    { key: "voie", label: "Voie d'administration", type: "text" },
+    { key: "peremption", label: "Date de péremption", type: "date" },
+  ],
+  "Perfusion": [
+    { key: "produit", label: "Nom du produit", type: "text" },
+    { key: "type_solute", label: "Type de soluté", type: "text" },
+    { key: "produits_ajoutes", label: "Produits/médicaments ajoutés au soluté (si nécessaire)", type: "text" },
+    { key: "debit", label: "Débit d'écoulement", type: "text" },
+    { key: "peremption_solute", label: "Date de péremption du soluté", type: "date" },
+    { key: "peremption_produits", label: "Date de péremption des produits ajoutés", type: "date" },
+  ],
+  "Pansement": [
+    { key: "type_pansement", label: "Type de pansement", type: "text" },
+    { key: "produits", label: "Produits utilisés et dates de péremption", type: "textarea" },
+    { key: "photo", label: "Photo du pansement", type: "photo" },
+  ],
+  "Rééducation / Kinésithérapie": [
+    { key: "type_reeducation", label: "Type", type: "select", options: ["Active", "Passive"] },
+    { key: "parties", label: "Parties concernées", type: "text" },
+    { key: "temps", label: "Temps (durée)", type: "text" },
+  ],
+  "Diagnostic infirmier / Consultation à domicile": [
+    { key: "tdr", label: "TDR positif", type: "select", options: ["Oui", "Non"] },
+    { key: "widal", label: "Widal positif", type: "select", options: ["Oui", "Non"] },
+  ],
+  "Nursing (12h)": [
+    { key: "type_nursing", label: "Type de nursing", type: "text" },
+    { key: "heure_debut", label: "Heure du commencement", type: "time" },
+  ],
+};
+
 const STATUS = {
   attente: { label: "En attente", color: "#C79A4B" },
   acceptee: { label: "Acceptée", color: "#3F6E5E" },
@@ -733,11 +772,24 @@ function LigneCopiable({ label, valeur }) {
   );
 }
 function PaiementInfo({ total }) {
+  const frais = Math.round(total * FRAIS_RETRAIT_TAUX);
+  const totalAvecFrais = total + frais + FONDS_SOUTIEN;
   return (
-    <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "16px 18px" }}>
-      <div style={{ fontWeight: 600, marginBottom: 6 }}>💳 Paiement — {formatFCFA(total)}</div>
-      <LigneCopiable label="Orange Money" valeur={PAIEMENT.orange} />
-      <LigneCopiable label="Wave" valeur={PAIEMENT.wave} />
+    <div style={{ border: `1px solid ${T.urgent}`, borderRadius: 10, padding: "16px 18px" }}>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: T.urgent }}>⚠ Paiement immédiat requis</div>
+      <p style={{ fontSize: 12.5, color: "#4B5A4F", marginTop: 0, marginBottom: 10, lineHeight: 1.5 }}>
+        Dès qu'un infirmier accepte, le paiement doit être effectué <strong>immédiatement</strong> — c'est ce qui garantit son déplacement. <strong>Aucun paiement en espèces n'est accepté.</strong>
+      </p>
+      <Ligne label="Sous-total soins" valeur={formatFCFA(total)} />
+      <Ligne label="Frais de retrait" valeur={formatFCFA(frais)} />
+      <Ligne label="Fonds de soutien" valeur={formatFCFA(FONDS_SOUTIEN)} />
+      <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 6, paddingTop: 6 }}>
+        <Ligne label="Total à payer" valeur={formatFCFA(totalAvecFrais)} fort />
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <LigneCopiable label="Orange Money" valeur={PAIEMENT.orange} />
+        <LigneCopiable label="Wave" valeur={PAIEMENT.wave} />
+      </div>
       <p style={{ fontSize: 12.5, color: T.muted, marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
         Copiez l'un des numéros ci-dessus pour effectuer la transaction par le moyen de paiement de votre choix.
       </p>
@@ -803,6 +855,12 @@ function InfirmierEspace({ session, onProfilChange }) {
       charger();
     } catch (e) { setErreur(e.message); }
   }
+  async function enregistrerDetails(id, details) {
+    try {
+      await demandesTable.update(`id=eq.${id}`, { details_soin: details }, session.token);
+      charger();
+    } catch (e) { setErreur(e.message); }
+  }
   async function terminer(id, demande) {
     try {
       const penalite = !!session.profile.penalite_active;
@@ -857,8 +915,9 @@ function InfirmierEspace({ session, onProfilChange }) {
         mesInterventions.length === 0 ? <VideMessage texte="Aucune intervention." /> :
         mesInterventions.map((d) => (
           <DemandeRowInfirmier
-            key={d.id} d={d} detaillee
+            key={d.id} d={d} detaillee token={session.token} userId={session.userId}
             onEnregistrerConstantes={(c) => enregistrerConstantes(d.id, c)}
+            onEnregistrerDetails={(det) => enregistrerDetails(d.id, det)}
             onTerminer={() => terminer(d.id, d)}
             onAnnuler={() => annuler(d.id)}
             onSignaler={(motif, details) => signaler(d.id, motif, details)}
@@ -869,17 +928,42 @@ function InfirmierEspace({ session, onProfilChange }) {
   );
 }
 
-function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes, onTerminer, onAnnuler, onSignaler }) {
+function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes, onEnregistrerDetails, onTerminer, onAnnuler, onSignaler, token, userId }) {
   const s = STATUS[d.statut];
   const [constantes, setConstantes] = useState({
     constante_ta: d.constante_ta || "", constante_temp: d.constante_temp || "", constante_resp: d.constante_resp || "",
     constante_pouls: d.constante_pouls || "", constante_spo2: d.constante_spo2 || "", constante_conscience: d.constante_conscience || "",
   });
+  const soinsListe = d.soin.split(",").map((x) => x.trim());
+  const soinsAvecChamps = soinsListe.filter((s2) => SOIN_CHAMPS[s2]);
+  const [detailsSoin, setDetailsSoin] = useState(() => {
+    const base = {};
+    soinsAvecChamps.forEach((s2) => { base[s2] = (d.details_soin && d.details_soin[s2]) || {}; });
+    return base;
+  });
+  const [envoiPhoto, setEnvoiPhoto] = useState(false);
+  const detailsDejaEnregistres = d.details_soin && Object.keys(d.details_soin).length > 0;
+  function majDetail(soinNom, champKey, valeur) {
+    setDetailsSoin((f) => ({ ...f, [soinNom]: { ...f[soinNom], [champKey]: valeur } }));
+  }
+  async function gererPhoto(soinNom, champKey, file) {
+    if (!file) return;
+    setEnvoiPhoto(true);
+    try {
+      const chemin = await uploadDocument(userId, file, `pansement-${d.id}`, token);
+      majDetail(soinNom, champKey, chemin);
+    } catch (e) {}
+    finally { setEnvoiPhoto(false); }
+  }
   const [afficherSignal, setAfficherSignal] = useState(false);
-  const [motif, setMotif] = useState("Patient/patiente coopérant(e)");
+  const [motifs, setMotifs] = useState([]);
   const [details, setDetails] = useState("");
   const cc = (k, v) => setConstantes((f) => ({ ...f, [k]: v }));
   const constantesEnregistrees = !!d.constante_ta;
+  const OPTIONS_SIGNALEMENT = ["Cas à référer (dépasse mes compétences)", "Patient/patiente coopérant(e)", "Effets secondaires", "Autres"];
+  function basculerMotif(m) {
+    setMotifs((ms) => (ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]));
+  }
 
   return (
     <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
@@ -929,23 +1013,87 @@ function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes
             <button style={btnGhost()} onClick={() => onEnregistrerConstantes(constantes)}>Enregistrer les constantes</button>
           )}
 
+          {soinsAvecChamps.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Détails du/des soin(s)</div>
+              {soinsAvecChamps.map((soinNom) => (
+                <div key={soinNom} style={{ border: `1px solid ${T.line}`, borderRadius: 8, padding: 12, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.primary, marginBottom: 8 }}>{soinNom}</div>
+                  {detailsDejaEnregistres ? (
+                    <div style={{ fontSize: 12.5, color: T.muted, display: "grid", gap: 2 }}>
+                      {SOIN_CHAMPS[soinNom].map((champ) => {
+                        const val = (d.details_soin[soinNom] || {})[champ.key];
+                        if (!val) return null;
+                        if (champ.type === "photo") {
+                          return <button key={champ.key} style={btnGhost(T.muted)} onClick={() => ouvrirDocument(val, token)}>Voir la photo du pansement</button>;
+                        }
+                        return <span key={champ.key}>{champ.label} : {val}</span>;
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {SOIN_CHAMPS[soinNom].map((champ) => {
+                        const valeur = (detailsSoin[soinNom] || {})[champ.key] || "";
+                        if (champ.type === "select") {
+                          return (
+                            <select key={champ.key} style={inputStyle} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)}>
+                              <option value="">{champ.label}</option>
+                              {champ.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          );
+                        }
+                        if (champ.type === "textarea") {
+                          return <textarea key={champ.key} style={{ ...inputStyle, minHeight: 55 }} placeholder={champ.label} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)} />;
+                        }
+                        if (champ.type === "photo") {
+                          return (
+                            <label key={champ.key} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
+                              <span>{valeur ? "📄" : "📎"}</span>
+                              <span style={{ fontSize: 13, color: T.muted }}>{valeur ? "Photo ajoutée" : envoiPhoto ? "Envoi…" : champ.label}</span>
+                              <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => gererPhoto(soinNom, champ.key, e.target.files[0])} />
+                            </label>
+                          );
+                        }
+                        return <input key={champ.key} style={inputStyle} type={champ.type} placeholder={champ.label} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)} />;
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!detailsDejaEnregistres && (
+                <button style={btnGhost()} onClick={() => onEnregistrerDetails(detailsSoin)}>Enregistrer les détails du soin</button>
+              )}
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button style={btnGhost(T.muted)} onClick={onTerminer}>Marquer terminée</button>
             <button style={btnGhost(T.urgent)} onClick={() => { if (window.confirm("Annuler ce soin ? Une pénalité de -50% s'appliquera à votre prochain soin.")) onAnnuler(); }}>Annuler</button>
             <button style={btnGhost(T.gold)} onClick={() => setAfficherSignal((v) => !v)}>Signaler</button>
           </div>
+          <p style={{ fontSize: 11.5, color: T.urgent, marginTop: 8, marginBottom: 0 }}>
+            ⚠ Si vous acceptez un soin puis l'annulez ou ne l'effectuez pas, une pénalité de -50% sera automatiquement déduite de votre prochain soin terminé.
+          </p>
 
           {afficherSignal && (
             <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-              <Champ label="Motif du signalement">
-                <select style={inputStyle} value={motif} onChange={(e) => setMotif(e.target.value)}>
-                  <option>Patient/patiente coopérant(e)</option>
-                  <option>Effets secondaires</option>
-                  <option>Autres</option>
-                </select>
-              </Champ>
+              <span style={{ display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 8 }}>Choses à signaler (une ou plusieurs)</span>
+              <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
+                {OPTIONS_SIGNALEMENT.map((m) => (
+                  <label key={m} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${motifs.includes(m) ? T.gold : T.line}`, borderRadius: 8, padding: "9px 12px", background: motifs.includes(m) ? T.goldBg : "#FFFEFC" }}>
+                    <input type="checkbox" checked={motifs.includes(m)} onChange={() => basculerMotif(m)} />
+                    <span style={{ fontSize: 13.5 }}>{m}</span>
+                  </label>
+                ))}
+              </div>
               <Champ label="Détails"><textarea style={{ ...inputStyle, minHeight: 55 }} value={details} onChange={(e) => setDetails(e.target.value)} /></Champ>
-              <button style={btnPrimary()} onClick={() => { onSignaler(motif, details); setAfficherSignal(false); }}>Envoyer le signalement à l'administrateur</button>
+              <button
+                style={btnPrimary(motifs.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {})}
+                disabled={motifs.length === 0}
+                onClick={() => { onSignaler(motifs.join(", "), details); setAfficherSignal(false); setMotifs([]); setDetails(""); }}
+              >
+                Envoyer le signalement à l'administrateur
+              </button>
             </div>
           )}
         </div>
@@ -1067,6 +1215,27 @@ function AdminDash({ session }) {
             {d.constante_ta && (
               <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
                 Constantes : TA {d.constante_ta} · T° {d.constante_temp} · R {d.constante_resp} · Pls {d.constante_pouls} · SpO2 {d.constante_spo2} · Conscience : {d.constante_conscience}
+              </div>
+            )}
+            {d.details_soin && Object.keys(d.details_soin).length > 0 && (
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 6, display: "grid", gap: 3 }}>
+                {Object.entries(d.details_soin).map(([nomSoin, champs]) => (
+                  <div key={nomSoin}>
+                    <strong>{nomSoin} :</strong>{" "}
+                    {(SOIN_CHAMPS[nomSoin] || []).map((champ) => {
+                      const val = champs[champ.key];
+                      if (!val) return null;
+                      if (champ.type === "photo") {
+                        return (
+                          <button key={champ.key} style={{ ...btnGhost(T.muted), padding: "2px 8px", fontSize: 11.5, marginLeft: 4 }} onClick={() => ouvrirDocument(val, session.token)}>
+                            photo
+                          </button>
+                        );
+                      }
+                      return <span key={champ.key}>{champ.label} : {val} · </span>;
+                    })}
+                  </div>
+                ))}
               </div>
             )}
             {d.signalement && <div style={{ fontSize: 12, color: T.gold, marginTop: 4 }}>⚠ Signalé — {d.signalement_motif} : {d.signalement_details}</div>}
