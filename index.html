@@ -14,18 +14,11 @@
 
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-<script type="text/babel" data-presets="react">
+<script>
 const { useState, useEffect } = React;
-
-/* ---------------------------------------------------------------
-   Connexion Supabase (API REST directe)
---------------------------------------------------------------- */
-
 const SUPABASE_URL = "https://hhjgnzyzvcwsuwmhnsiv.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_YcVccuCkE6BfCkTatuZ3BA_qewNf_Ix";
-
 async function supaFetch(path, { method = "GET", body, token, extraHeaders = {} } = {}) {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     method,
@@ -34,139 +27,128 @@ async function supaFetch(path, { method = "GET", body, token, extraHeaders = {} 
       Authorization: `Bearer ${token || SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
-      ...extraHeaders,
+      ...extraHeaders
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== void 0 ? JSON.stringify(body) : void 0
   });
   const texte = await res.text();
   const data = texte ? JSON.parse(texte) : null;
   if (!res.ok) {
-    throw new Error((data && (data.msg || data.message || data.error_description)) || "Erreur inconnue");
+    throw new Error(data && (data.msg || data.message || data.error_description) || "Erreur inconnue");
   }
   return data;
 }
-
 const auth = {
   signUp: (email, password) => supaFetch("/auth/v1/signup", { method: "POST", body: { email, password } }),
-  signIn: (email, password) =>
-    supaFetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } }),
+  signIn: (email, password) => supaFetch("/auth/v1/token?grant_type=password", { method: "POST", body: { email, password } })
 };
-
 function rest(table) {
   return {
     select: (query, token) => supaFetch(`/rest/v1/${table}?${query}`, { token }),
     insert: (row, token) => supaFetch(`/rest/v1/${table}`, { method: "POST", body: [row], token }),
-    update: (query, patch, token) =>
-      supaFetch(`/rest/v1/${table}?${query}`, { method: "PATCH", body: patch, token }),
+    update: (query, patch, token) => supaFetch(`/rest/v1/${table}?${query}`, { method: "PATCH", body: patch, token })
   };
 }
 const profilesTable = rest("profiles");
 const demandesTable = rest("demandes");
-
 async function uploadDocument(userId, file, label, token) {
   const chemin = `${userId}/${label}-${Date.now()}-${file.name}`;
   const res = await fetch(`${SUPABASE_URL}/storage/v1/object/documents/${chemin}`, {
     method: "POST",
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type },
-    body: file,
+    body: file
   });
-  if (!res.ok) throw new Error("Échec de l'envoi du fichier");
+  if (!res.ok) throw new Error("\xC9chec de l'envoi du fichier");
   return chemin;
 }
-
 async function ouvrirDocument(chemin, token) {
   const res = await supaFetch(`/storage/v1/object/sign/documents/${chemin}`, {
     method: "POST",
     body: { expiresIn: 300 },
-    token,
+    token
   });
   window.open(`${SUPABASE_URL}${res.signedURL}`, "_blank");
 }
-
-/* ---------------------------------------------------------------
-   Données de référence
---------------------------------------------------------------- */
-
-const COMMISSION_TAUX = 0.10;
-const DEPLACEMENT = 2000;
-
+const COMMISSION_TAUX = 0.1;
+const DEPLACEMENT = 2e3;
 const TARIFS = {
-  "Perfusion": 3000,
-  "Injection": 2000,
-  "Pansement": 3000,
-  "Nursing (12h)": 15000,
-  "Rééducation / Kinésithérapie": 5000,
-  "Diagnostic infirmier / Consultation à domicile": 5000,
-  "Prélèvement sanguin": 2000,
-  "Counseling planification familiale": 20000,
+  "Perfusion": 3e3,
+  "Injection": 2e3,
+  "Pansement": 3e3,
+  "Nursing (12h)": 15e3,
+  "R\xE9\xE9ducation / Kin\xE9sith\xE9rapie": 5e3,
+  "Diagnostic infirmier / Consultation \xE0 domicile": 5e3,
+  "Pr\xE9l\xE8vement sanguin": 2e3,
+  "Counseling planification familiale": 2e4
 };
-
 const PAIEMENT = { orange: "84 24 32 97", wave: "65 60 94 18" };
-
-// ⚠️ Valeurs provisoires — à remplacer par les montants réels
-const FRAIS_RETRAIT_TAUX = 0.02; // 2% du sous-total soins
-const FONDS_SOUTIEN = 500; // FCFA, montant fixe
-
+const FRAIS_RETRAIT_TAUX = 0.02;
+const FONDS_SOUTIEN = 500;
 const SOIN_CHAMPS = {
   "Injection": [
     { key: "produit", label: "Nom du produit", type: "text" },
-    { key: "type_injection", label: "Type d'injection", type: "select", options: ["Intramusculaire", "Intraveineuse", "Sous-cutanée", "Intradermique"] },
+    { key: "type_injection", label: "Type d'injection", type: "select", options: ["Intramusculaire", "Intraveineuse", "Sous-cutan\xE9e", "Intradermique"] },
     { key: "voie", label: "Voie d'administration", type: "text" },
-    { key: "peremption", label: "Date de péremption", type: "date" },
+    { key: "peremption", label: "Date de p\xE9remption", type: "date" }
   ],
   "Perfusion": [
     { key: "produit", label: "Nom du produit", type: "text" },
-    { key: "type_solute", label: "Type de soluté", type: "text" },
-    { key: "produits_ajoutes", label: "Produits/médicaments ajoutés au soluté (si nécessaire)", type: "text" },
-    { key: "debit", label: "Débit d'écoulement", type: "text" },
-    { key: "peremption_solute", label: "Date de péremption du soluté", type: "date" },
-    { key: "peremption_produits", label: "Date de péremption des produits ajoutés", type: "date" },
+    { key: "type_solute", label: "Type de solut\xE9", type: "text" },
+    { key: "produits_ajoutes", label: "Produits/m\xE9dicaments ajout\xE9s au solut\xE9 (si n\xE9cessaire)", type: "text" },
+    { key: "debit", label: "D\xE9bit d'\xE9coulement", type: "text" },
+    { key: "peremption_solute", label: "Date de p\xE9remption du solut\xE9", type: "date" },
+    { key: "peremption_produits", label: "Date de p\xE9remption des produits ajout\xE9s", type: "date" }
   ],
   "Pansement": [
     { key: "type_pansement", label: "Type de pansement", type: "text" },
-    { key: "produits", label: "Produits utilisés et dates de péremption", type: "textarea" },
-    { key: "photo", label: "Photo du pansement", type: "photo" },
+    { key: "produits", label: "Produits utilis\xE9s et dates de p\xE9remption", type: "textarea" },
+    { key: "photo", label: "Photo du pansement", type: "photo" }
   ],
-  "Rééducation / Kinésithérapie": [
+  "R\xE9\xE9ducation / Kin\xE9sith\xE9rapie": [
     { key: "type_reeducation", label: "Type", type: "select", options: ["Active", "Passive"] },
-    { key: "parties", label: "Parties concernées", type: "text" },
-    { key: "temps", label: "Temps (durée)", type: "text" },
+    { key: "parties", label: "Parties concern\xE9es", type: "text" },
+    { key: "temps", label: "Temps (dur\xE9e)", type: "text" }
   ],
-  "Diagnostic infirmier / Consultation à domicile": [
+  "Diagnostic infirmier / Consultation \xE0 domicile": [
     { key: "tdr", label: "TDR positif", type: "select", options: ["Oui", "Non"] },
-    { key: "widal", label: "Widal positif", type: "select", options: ["Oui", "Non"] },
+    { key: "widal", label: "Widal positif", type: "select", options: ["Oui", "Non"] }
   ],
   "Nursing (12h)": [
     { key: "type_nursing", label: "Type de nursing", type: "text" },
-    { key: "heure_debut", label: "Heure du commencement", type: "time" },
-  ],
+    { key: "heure_debut", label: "Heure du commencement", type: "time" }
+  ]
 };
-
 const STATUS = {
   attente: { label: "En attente", color: "#C79A4B" },
-  acceptee: { label: "Acceptée", color: "#3F6E5E" },
-  terminee: { label: "Terminée", color: "#7C8880" },
+  acceptee: { label: "Accept\xE9e", color: "#3F6E5E" },
+  terminee: { label: "Termin\xE9e", color: "#7C8880" }
 };
-
 function formatFCFA(n) {
   return n.toLocaleString("fr-FR") + " FCFA";
 }
-
-/* ---------------------------------------------------------------
-   Styles partagés
---------------------------------------------------------------- */
-
 const T = {
-  bg: "#F6F3ED", bgAlt: "#EAF0EA", ink: "#263129", muted: "#7C8880",
-  primary: "#3F6E5E", primaryLight: "#E7EFEA", gold: "#B98A3A", goldBg: "#F5EBD7",
-  urgent: "#B8483D", card: "#FFFFFF", line: "#E1DACB",
+  bg: "#F6F3ED",
+  bgAlt: "#EAF0EA",
+  ink: "#263129",
+  muted: "#7C8880",
+  primary: "#3F6E5E",
+  primaryLight: "#E7EFEA",
+  gold: "#B98A3A",
+  goldBg: "#F5EBD7",
+  urgent: "#B8483D",
+  card: "#FFFFFF",
+  line: "#E1DACB"
 };
-
 const inputStyle = {
-  width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 15,
-  border: `1px solid ${T.line}`, borderRadius: 8, background: "#FFFEFC", color: T.ink,
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "11px 13px",
+  fontSize: 15,
+  border: `1px solid ${T.line}`,
+  borderRadius: 8,
+  background: "#FFFEFC",
+  color: T.ink
 };
-
 function btnPrimary(extra) {
   return { background: T.primary, color: "#F6F3ED", border: "none", borderRadius: 8, padding: "12px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", ...extra };
 }
@@ -174,67 +156,36 @@ function btnGhost(color = T.primary) {
   return { background: "none", border: `1px solid ${color}`, color, borderRadius: 7, padding: "7px 14px", fontSize: 13.5, cursor: "pointer" };
 }
 function Champ({ label, children }) {
-  return (
-    <label style={{ display: "block", marginBottom: 16 }}>
-      <span style={{ display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 6 }}>{label}</span>
-      {children}
-    </label>
-  );
+  return /* @__PURE__ */ React.createElement("label", { style: { display: "block", marginBottom: 16 } }, /* @__PURE__ */ React.createElement("span", { style: { display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 6 } }, label), children);
 }
 function Brand({ size = 26 }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <div style={{ width: size + 12, height: size + 12, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <span style={{ fontSize: size * 0.6, color: T.primary, lineHeight: 1 }}>♥</span>
-      </div>
-      <span style={{ fontFamily: 'Georgia, "Iowan Old Style", serif', fontSize: size, fontWeight: 500, color: T.ink, letterSpacing: "-0.01em" }}>HomeCare</span>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 9 } }, /* @__PURE__ */ React.createElement("div", { style: { width: size + 12, height: size + 12, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: size * 0.6, color: T.primary, lineHeight: 1 } }, "\u2665")), /* @__PURE__ */ React.createElement("span", { style: { fontFamily: 'Georgia, "Iowan Old Style", serif', fontSize: size, fontWeight: 500, color: T.ink, letterSpacing: "-0.01em" } }, "HomeCare"));
 }
 function RetourLink({ onClick, children = "Retour" }) {
-  return (
-    <button onClick={onClick} style={{ background: "none", border: "none", color: T.muted, fontSize: 13.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: 0, marginBottom: 18 }}>
-      <span>‹</span> {children}
-    </button>
-  );
+  return /* @__PURE__ */ React.createElement("button", { onClick, style: { background: "none", border: "none", color: T.muted, fontSize: 13.5, display: "flex", alignItems: "center", gap: 4, cursor: "pointer", padding: 0, marginBottom: 18 } }, /* @__PURE__ */ React.createElement("span", null, "\u2039"), " ", children);
 }
 const titreStyle = { fontFamily: 'Georgia, "Iowan Old Style", serif', fontSize: 22, fontWeight: 500, margin: "0 0 6px" };
 function Onglets({ items, actif, onChange }) {
-  return (
-    <div style={{ display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20, overflowX: "auto" }}>
-      {items.map((it) => (
-        <button key={it.key} onClick={() => onChange(it.key)} style={{ background: "none", border: "none", padding: "0 0 11px", fontSize: 14, whiteSpace: "nowrap", fontWeight: actif === it.key ? 600 : 400, color: actif === it.key ? T.ink : T.muted, borderBottom: actif === it.key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 }}>
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20, overflowX: "auto" } }, items.map((it) => /* @__PURE__ */ React.createElement("button", { key: it.key, onClick: () => onChange(it.key), style: { background: "none", border: "none", padding: "0 0 11px", fontSize: 14, whiteSpace: "nowrap", fontWeight: actif === it.key ? 600 : 400, color: actif === it.key ? T.ink : T.muted, borderBottom: actif === it.key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 } }, it.label)));
 }
 function VideMessage({ texte }) {
-  return <div style={{ color: T.muted, fontSize: 14, padding: "10px 0" }}>{texte}</div>;
+  return /* @__PURE__ */ React.createElement("div", { style: { color: T.muted, fontSize: 14, padding: "10px 0" } }, texte);
 }
 function ErreurTexte({ children }) {
   if (!children) return null;
-  return <p style={{ fontSize: 13, color: T.urgent, marginTop: -8, marginBottom: 14 }}>{children}</p>;
+  return /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: T.urgent, marginTop: -8, marginBottom: 14 } }, children);
 }
 function Spinner() {
-  return <div style={{ width: 18, height: 18, border: `2px solid ${T.line}`, borderTopColor: T.primary, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />;
+  return /* @__PURE__ */ React.createElement("div", { style: { width: 18, height: 18, border: `2px solid ${T.line}`, borderTopColor: T.primary, borderRadius: "50%", animation: "spin 0.8s linear infinite" } });
 }
-
-/* ---------------------------------------------------------------
-   App racine
---------------------------------------------------------------- */
-
 function App() {
   const [session, setSession] = useState(null);
   const [screen, setScreen] = useState("accueil");
   const [roleEnCours, setRoleEnCours] = useState(null);
-
   function retourAccueil() {
     setScreen("accueil");
     setRoleEnCours(null);
   }
-
   async function connecter(email, password, roleAttendu) {
     const res = await auth.signIn(email.trim().toLowerCase(), password);
     const token = res.access_token;
@@ -242,146 +193,93 @@ function App() {
     const rows = await profilesTable.select(`id=eq.${userId}&select=*`, token);
     const profile = rows[0];
     if (!profile) throw new Error("Profil introuvable.");
-    if (profile.supprime) throw new Error("Ce compte a été désactivé par l'administrateur.");
-    if (roleAttendu && profile.role !== roleAttendu) throw new Error("Ce compte n'a pas ce rôle.");
+    if (profile.supprime) throw new Error("Ce compte a \xE9t\xE9 d\xE9sactiv\xE9 par l'administrateur.");
+    if (roleAttendu && profile.role !== roleAttendu) throw new Error("Ce compte n'a pas ce r\xF4le.");
     setSession({ token, userId, profile });
     retourAccueil();
   }
-
   function seDeconnecter() {
     setSession(null);
     retourAccueil();
   }
-
   function mettreAJourProfil(nouveauProfil) {
     setSession((s) => ({ ...s, profile: nouveauProfil }));
   }
-
-  if (session?.profile.role === "admin") {
-    return <Shell><TopBar label="Espace administrateur" onLogout={seDeconnecter} /><AdminDash session={session} /></Shell>;
+  if ((session == null ? void 0 : session.profile.role) === "admin") {
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(TopBar, { label: "Espace administrateur", onLogout: seDeconnecter }), /* @__PURE__ */ React.createElement(AdminDash, { session }));
   }
-  if (session?.profile.role === "patient") {
-    return <Shell><TopBar label={`Bonjour, ${session.profile.nom || ""}`} onLogout={seDeconnecter} /><PatientEspace session={session} /></Shell>;
+  if ((session == null ? void 0 : session.profile.role) === "patient") {
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(TopBar, { label: `Bonjour, ${session.profile.nom || ""}`, onLogout: seDeconnecter }), /* @__PURE__ */ React.createElement(PatientEspace, { session }));
   }
-  if (session?.profile.role === "infirmier") {
-    return <Shell><TopBar label={`Bonjour, ${session.profile.prenom || ""}`} onLogout={seDeconnecter} /><InfirmierEspace session={session} onProfilChange={mettreAJourProfil} /></Shell>;
+  if ((session == null ? void 0 : session.profile.role) === "infirmier") {
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(TopBar, { label: `Bonjour, ${session.profile.prenom || ""}`, onLogout: seDeconnecter }), /* @__PURE__ */ React.createElement(InfirmierEspace, { session, onProfilChange: mettreAJourProfil }));
   }
-
-  return (
-    <Shell>
-      {screen === "accueil" && (
-        <Accueil
-          onChoisirRole={(role) => { setRoleEnCours(role); setScreen("auth"); }}
-          onAdmin={() => { setRoleEnCours("admin"); setScreen("auth"); }}
-        />
-      )}
-      {screen === "auth" && roleEnCours === "patient" && (
-        <PatientAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "patient")} />
-      )}
-      {screen === "auth" && roleEnCours === "infirmier" && (
-        <InfirmierAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "infirmier")} />
-      )}
-      {screen === "auth" && roleEnCours === "admin" && (
-        <AdminAuth onRetour={retourAccueil} onConnecter={(e, p) => connecter(e, p, "admin")} />
-      )}
-      <p style={{ marginTop: 40, fontSize: 11, color: "#A69C8D", lineHeight: 1.6, textAlign: "center" }}>
-        HomeCare — connecté à une base de données réelle (Supabase).
-      </p>
-    </Shell>
-  );
+  return /* @__PURE__ */ React.createElement(Shell, null, screen === "accueil" && /* @__PURE__ */ React.createElement(
+    Accueil,
+    {
+      onChoisirRole: (role) => {
+        setRoleEnCours(role);
+        setScreen("auth");
+      },
+      onAdmin: () => {
+        setRoleEnCours("admin");
+        setScreen("auth");
+      }
+    }
+  ), screen === "auth" && roleEnCours === "patient" && /* @__PURE__ */ React.createElement(PatientAuth, { onRetour: retourAccueil, onConnecter: (e, p) => connecter(e, p, "patient") }), screen === "auth" && roleEnCours === "infirmier" && /* @__PURE__ */ React.createElement(InfirmierAuth, { onRetour: retourAccueil, onConnecter: (e, p) => connecter(e, p, "infirmier") }), screen === "auth" && roleEnCours === "admin" && /* @__PURE__ */ React.createElement(AdminAuth, { onRetour: retourAccueil, onConnecter: (e, p) => connecter(e, p, "admin") }), /* @__PURE__ */ React.createElement("p", { style: { marginTop: 40, fontSize: 11, color: "#A69C8D", lineHeight: 1.6, textAlign: "center" } }, "HomeCare \u2014 connect\xE9 \xE0 une base de donn\xE9es r\xE9elle (Supabase)."));
 }
-
 function Shell({ children }) {
-  return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: 'ui-sans-serif, -apple-system, "Segoe UI", sans-serif' }}>
-      <div style={{ maxWidth: 620, margin: "0 auto", padding: "26px 20px 50px" }}>{children}</div>
-      <style>{`
+  return /* @__PURE__ */ React.createElement("div", { style: { minHeight: "100vh", background: T.bg, color: T.ink, fontFamily: 'ui-sans-serif, -apple-system, "Segoe UI", sans-serif' } }, /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 620, margin: "0 auto", padding: "26px 20px 50px" } }, children), /* @__PURE__ */ React.createElement("style", null, `
         @keyframes spin { to { transform: rotate(360deg); } }
         input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid ${T.primary}; outline-offset: 2px; }
-      `}</style>
-    </div>
-  );
+      `));
 }
 function TopBar({ label, onLogout }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26 }}>
-      <Brand size={22} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 13.5, color: T.muted }}>{label}</span>
-        <button onClick={onLogout} style={btnGhost(T.muted)}>Sortir</button>
-      </div>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 26 } }, /* @__PURE__ */ React.createElement(Brand, { size: 22 }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13.5, color: T.muted } }, label), /* @__PURE__ */ React.createElement("button", { onClick: onLogout, style: btnGhost(T.muted) }, "Sortir")));
 }
-
 function Accueil({ onChoisirRole, onAdmin }) {
-  return (
-    <div>
-      <div style={{ background: `linear-gradient(180deg, ${T.bgAlt}, ${T.bg})`, borderRadius: 16, padding: "34px 24px", marginBottom: 26, textAlign: "center" }}>
-        <Brand size={30} />
-        <p style={{ marginTop: 14, fontSize: 15, color: "#4B5A4F", lineHeight: 1.6, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
-          Des soins infirmiers, chez vous, avec sérénité. Prenez rendez-vous avec un infirmier vérifié pour vos soins à domicile à Bamako.
-        </p>
-      </div>
-      <div style={{ display: "grid", gap: 10 }}>
-        <RoleCard emoji="🧑" titre="Je suis patient" desc="Demander un soin à domicile" onClick={() => onChoisirRole("patient")} />
-        <RoleCard emoji="🩺" titre="Je suis infirmier" desc="Recevoir et suivre des demandes de soins" onClick={() => onChoisirRole("infirmier")} />
-      </div>
-      <div style={{ textAlign: "center", marginTop: 34 }}>
-        <button onClick={onAdmin} style={{ background: "none", border: "none", color: "#B4AC9C", fontSize: 11.5, cursor: "pointer", padding: 4 }}>Administration</button>
-      </div>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { background: `linear-gradient(180deg, ${T.bgAlt}, ${T.bg})`, borderRadius: 16, padding: "34px 24px", marginBottom: 26, textAlign: "center" } }, /* @__PURE__ */ React.createElement(Brand, { size: 30 }), /* @__PURE__ */ React.createElement("p", { style: { marginTop: 14, fontSize: 15, color: "#4B5A4F", lineHeight: 1.6, maxWidth: 420, marginLeft: "auto", marginRight: "auto" } }, "Des soins infirmiers, chez vous, avec s\xE9r\xE9nit\xE9. Prenez rendez-vous avec un infirmier v\xE9rifi\xE9 pour vos soins \xE0 domicile \xE0 Bamako.")), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gap: 10 } }, /* @__PURE__ */ React.createElement(RoleCard, { emoji: "\u{1F9D1}", titre: "Je suis patient", desc: "Demander un soin \xE0 domicile", onClick: () => onChoisirRole("patient") }), /* @__PURE__ */ React.createElement(RoleCard, { emoji: "\u{1FA7A}", titre: "Je suis infirmier", desc: "Recevoir et suivre des demandes de soins", onClick: () => onChoisirRole("infirmier") })), /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", marginTop: 34 } }, /* @__PURE__ */ React.createElement("button", { onClick: onAdmin, style: { background: "none", border: "none", color: "#B4AC9C", fontSize: 11.5, cursor: "pointer", padding: 4 } }, "Administration")));
 }
 function RoleCard({ emoji, titre, desc, onClick }) {
-  return (
-    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 14, textAlign: "left", background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: "16px 18px", cursor: "pointer" }}>
-      <div style={{ width: 40, height: 40, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 18 }}>{emoji}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 600, fontSize: 15.5 }}>{titre}</div>
-        <div style={{ fontSize: 13, color: T.muted, marginTop: 1 }}>{desc}</div>
-      </div>
-      <span style={{ color: T.muted, fontSize: 18 }}>›</span>
-    </button>
-  );
+  return /* @__PURE__ */ React.createElement("button", { onClick, style: { display: "flex", alignItems: "center", gap: 14, textAlign: "left", background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: "16px 18px", cursor: "pointer" } }, /* @__PURE__ */ React.createElement("div", { style: { width: 40, height: 40, borderRadius: "50%", background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 18 } }, emoji), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 600, fontSize: 15.5 } }, titre), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 1 } }, desc)), /* @__PURE__ */ React.createElement("span", { style: { color: T.muted, fontSize: 18 } }, "\u203A"));
 }
-
 function AdminAuth({ onRetour, onConnecter }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [erreur, setErreur] = useState("");
   const [chargement, setChargement] = useState(false);
-
   async function soumettre(e) {
     e.preventDefault();
-    setErreur(""); setChargement(true);
-    try { await onConnecter(email, password); }
-    catch (err) { setErreur(err.message); }
-    finally { setChargement(false); }
+    setErreur("");
+    setChargement(true);
+    try {
+      await onConnecter(email, password);
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setChargement(false);
+    }
   }
-
-  return (
-    <div>
-      <RetourLink onClick={onRetour} />
-      <h2 style={titreStyle}>Connexion administrateur</h2>
-      <form onSubmit={soumettre}>
-        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
-        <Champ label="Mot de passe"><input style={inputStyle} type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
-        <ErreurTexte>{erreur}</ErreurTexte>
-        <button type="submit" disabled={chargement} style={btnPrimary()}>{chargement ? "Connexion…" : "Se connecter"}</button>
-      </form>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(RetourLink, { onClick: onRetour }), /* @__PURE__ */ React.createElement("h2", { style: titreStyle }, "Connexion administrateur"), /* @__PURE__ */ React.createElement("form", { onSubmit: soumettre }, /* @__PURE__ */ React.createElement(Champ, { label: "E-mail" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "email", required: true, value: email, onChange: (e) => setEmail(e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Mot de passe" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "password", required: true, value: password, onChange: (e) => setPassword(e.target.value) })), /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: chargement, style: btnPrimary() }, chargement ? "Connexion\u2026" : "Se connecter")));
 }
-
 function PatientAuth({ onRetour, onConnecter }) {
   const [mode, setMode] = useState("connexion");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [form, setForm] = useState({
-    nom: "", telephone: "", quartier: "", sexe: "Femme", age: "", nationalite: "",
-    situation_matrimoniale: "Célibataire", atcd_medicaux: "", atcd_chirurgicaux: "",
-    atcd_familiaux: "", allergies: "", tuteur_nom: "", tuteur_telephone: "",
+    nom: "",
+    telephone: "",
+    quartier: "",
+    sexe: "Femme",
+    age: "",
+    nationalite: "",
+    situation_matrimoniale: "C\xE9libataire",
+    atcd_medicaux: "",
+    atcd_chirurgicaux: "",
+    atcd_familiaux: "",
+    allergies: "",
+    tuteur_nom: "",
+    tuteur_telephone: ""
   });
   const [fichierPiece, setFichierPiece] = useState(null);
   const [erreur, setErreur] = useState("");
@@ -389,105 +287,57 @@ function PatientAuth({ onRetour, onConnecter }) {
   const [succes, setSucces] = useState(false);
   const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const mineur = form.age !== "" && Number(form.age) < 18;
-
   async function soumettre(e) {
     e.preventDefault();
-    setErreur(""); setChargement(true);
+    setErreur("");
+    setChargement(true);
     try {
       if (mode === "connexion") {
         await onConnecter(email, password);
       } else {
-        if (!fichierPiece) throw new Error("Merci de joindre une photo de pièce d'identité.");
+        if (!fichierPiece) throw new Error("Merci de joindre une photo de pi\xE8ce d'identit\xE9.");
         if (mineur && (!form.tuteur_nom || !form.tuteur_telephone)) throw new Error("Un tuteur est requis pour les moins de 18 ans.");
         const res = await auth.signUp(email.trim().toLowerCase(), password);
         const token = res.access_token;
-        if (!token) throw new Error("Confirmation e-mail encore activée côté Supabase — désactive-la.");
+        if (!token) throw new Error("Confirmation e-mail encore activ\xE9e c\xF4t\xE9 Supabase \u2014 d\xE9sactive-la.");
         const userId = res.user.id;
         const cheminPiece = await uploadDocument(userId, fichierPiece, "piece", token);
         await profilesTable.insert(
           {
-            id: userId, role: "patient", email: email.trim().toLowerCase(), verified: false,
-            nom: form.nom, telephone: form.telephone, quartier: form.quartier,
-            sexe: form.sexe, age: Number(form.age), nationalite: form.nationalite,
+            id: userId,
+            role: "patient",
+            email: email.trim().toLowerCase(),
+            verified: false,
+            nom: form.nom,
+            telephone: form.telephone,
+            quartier: form.quartier,
+            sexe: form.sexe,
+            age: Number(form.age),
+            nationalite: form.nationalite,
             situation_matrimoniale: form.situation_matrimoniale,
-            atcd_medicaux: form.atcd_medicaux, atcd_chirurgicaux: form.atcd_chirurgicaux,
-            atcd_familiaux: form.atcd_familiaux, allergies: form.allergies,
-            tuteur_nom: mineur ? form.tuteur_nom : null, tuteur_telephone: mineur ? form.tuteur_telephone : null,
-            photo_piece_url: cheminPiece,
+            atcd_medicaux: form.atcd_medicaux,
+            atcd_chirurgicaux: form.atcd_chirurgicaux,
+            atcd_familiaux: form.atcd_familiaux,
+            allergies: form.allergies,
+            tuteur_nom: mineur ? form.tuteur_nom : null,
+            tuteur_telephone: mineur ? form.tuteur_telephone : null,
+            photo_piece_url: cheminPiece
           },
           token
         );
         setSucces(true);
       }
-    } catch (err) { setErreur(err.message); }
-    finally { setChargement(false); }
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setChargement(false);
+    }
   }
-
   if (succes) {
-    return (
-      <div style={{ textAlign: "center", padding: "20px 0" }}>
-        <div style={{ fontSize: 28, color: T.primary }}>✓</div>
-        <h2 style={{ ...titreStyle, textAlign: "center", marginTop: 12 }}>Compte créé</h2>
-        <p style={{ fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" }}>
-          Ton compte est en attente de validation par l'administrateur.
-        </p>
-        <button onClick={onRetour} style={btnPrimary()}>Retour à l'accueil</button>
-      </div>
-    );
+    return /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", padding: "20px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28, color: T.primary } }, "\u2713"), /* @__PURE__ */ React.createElement("h2", { style: { ...titreStyle, textAlign: "center", marginTop: 12 } }, "Compte cr\xE9\xE9"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" } }, "Ton compte est en attente de validation par l'administrateur."), /* @__PURE__ */ React.createElement("button", { onClick: onRetour, style: btnPrimary() }, "Retour \xE0 l'accueil"));
   }
-
-  return (
-    <div>
-      <RetourLink onClick={onRetour} />
-      <h2 style={titreStyle}>Espace patient</h2>
-      <ModeToggle mode={mode} onChange={setMode} />
-      <form onSubmit={soumettre}>
-        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
-        <Champ label="Mot de passe"><input style={inputStyle} type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
-        {mode === "inscription" && (
-          <>
-            <Champ label="Nom complet"><input style={inputStyle} required value={form.nom} onChange={(e) => c("nom", e.target.value)} /></Champ>
-            <Champ label="Téléphone"><input style={inputStyle} required value={form.telephone} onChange={(e) => c("telephone", e.target.value)} /></Champ>
-            <Champ label="Quartier / résidence à Bamako"><input style={inputStyle} required value={form.quartier} onChange={(e) => c("quartier", e.target.value)} /></Champ>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ flex: 1 }}>
-                <Champ label="Sexe">
-                  <select style={inputStyle} value={form.sexe} onChange={(e) => c("sexe", e.target.value)}>
-                    <option>Femme</option><option>Homme</option>
-                  </select>
-                </Champ>
-              </div>
-              <div style={{ flex: 1 }}>
-                <Champ label="Âge"><input style={inputStyle} type="number" min="0" required value={form.age} onChange={(e) => c("age", e.target.value)} /></Champ>
-              </div>
-            </div>
-            <Champ label="Nationalité"><input style={inputStyle} required value={form.nationalite} onChange={(e) => c("nationalite", e.target.value)} /></Champ>
-            <Champ label="Situation matrimoniale">
-              <select style={inputStyle} value={form.situation_matrimoniale} onChange={(e) => c("situation_matrimoniale", e.target.value)}>
-                <option>Célibataire</option><option>Marié(e)</option><option>Divorcé(e)</option><option>Veuf(ve)</option>
-              </select>
-            </Champ>
-            <FichierChamp label="Photo pièce d'identité (carte biométrique, fiche individuelle, CNI ou carte scolaire valide)" fichier={fichierPiece} onChange={setFichierPiece} />
-            {mineur && (
-              <div style={{ background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
-                <p style={{ fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" }}>Patient(e) mineur(e) — un tuteur est requis.</p>
-                <Champ label="Nom du tuteur"><input style={inputStyle} required value={form.tuteur_nom} onChange={(e) => c("tuteur_nom", e.target.value)} /></Champ>
-                <Champ label="Téléphone du tuteur"><input style={inputStyle} required value={form.tuteur_telephone} onChange={(e) => c("tuteur_telephone", e.target.value)} /></Champ>
-              </div>
-            )}
-            <Champ label="Antécédents médicaux (maladies chroniques, autres)"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_medicaux} onChange={(e) => c("atcd_medicaux", e.target.value)} /></Champ>
-            <Champ label="Antécédents chirurgicaux"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_chirurgicaux} onChange={(e) => c("atcd_chirurgicaux", e.target.value)} /></Champ>
-            <Champ label="Antécédents familiaux"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.atcd_familiaux} onChange={(e) => c("atcd_familiaux", e.target.value)} /></Champ>
-            <Champ label="Allergies connues (médicamenteuses, alimentaires, etc.)"><textarea style={{ ...inputStyle, minHeight: 60 }} value={form.allergies} onChange={(e) => c("allergies", e.target.value)} /></Champ>
-          </>
-        )}
-        <ErreurTexte>{erreur}</ErreurTexte>
-        <button type="submit" disabled={chargement} style={btnPrimary()}>{chargement ? "Un instant…" : mode === "connexion" ? "Se connecter" : "Créer mon compte"}</button>
-      </form>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(RetourLink, { onClick: onRetour }), /* @__PURE__ */ React.createElement("h2", { style: titreStyle }, "Espace patient"), /* @__PURE__ */ React.createElement(ModeToggle, { mode, onChange: setMode }), /* @__PURE__ */ React.createElement("form", { onSubmit: soumettre }, /* @__PURE__ */ React.createElement(Champ, { label: "E-mail" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "email", required: true, value: email, onChange: (e) => setEmail(e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Mot de passe" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "password", required: true, minLength: 6, value: password, onChange: (e) => setPassword(e.target.value) })), mode === "inscription" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(Champ, { label: "Nom complet" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.nom, onChange: (e) => c("nom", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "T\xE9l\xE9phone" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.telephone, onChange: (e) => c("telephone", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Quartier / r\xE9sidence \xE0 Bamako" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.quartier, onChange: (e) => c("quartier", e.target.value) })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "Sexe" }, /* @__PURE__ */ React.createElement("select", { style: inputStyle, value: form.sexe, onChange: (e) => c("sexe", e.target.value) }, /* @__PURE__ */ React.createElement("option", null, "Femme"), /* @__PURE__ */ React.createElement("option", null, "Homme")))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "\xC2ge" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "number", min: "0", required: true, value: form.age, onChange: (e) => c("age", e.target.value) })))), /* @__PURE__ */ React.createElement(Champ, { label: "Nationalit\xE9" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.nationalite, onChange: (e) => c("nationalite", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Situation matrimoniale" }, /* @__PURE__ */ React.createElement("select", { style: inputStyle, value: form.situation_matrimoniale, onChange: (e) => c("situation_matrimoniale", e.target.value) }, /* @__PURE__ */ React.createElement("option", null, "C\xE9libataire"), /* @__PURE__ */ React.createElement("option", null, "Mari\xE9(e)"), /* @__PURE__ */ React.createElement("option", null, "Divorc\xE9(e)"), /* @__PURE__ */ React.createElement("option", null, "Veuf(ve)"))), /* @__PURE__ */ React.createElement(FichierChamp, { label: "Photo pi\xE8ce d'identit\xE9 (carte biom\xE9trique, fiche individuelle, CNI ou carte scolaire valide)", fichier: fichierPiece, onChange: setFichierPiece }), mineur && /* @__PURE__ */ React.createElement("div", { style: { background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 } }, /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" } }, "Patient(e) mineur(e) \u2014 un tuteur est requis."), /* @__PURE__ */ React.createElement(Champ, { label: "Nom du tuteur" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.tuteur_nom, onChange: (e) => c("tuteur_nom", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "T\xE9l\xE9phone du tuteur" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.tuteur_telephone, onChange: (e) => c("tuteur_telephone", e.target.value) }))), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents m\xE9dicaux (maladies chroniques, autres)" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 60 }, value: form.atcd_medicaux, onChange: (e) => c("atcd_medicaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents chirurgicaux" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 60 }, value: form.atcd_chirurgicaux, onChange: (e) => c("atcd_chirurgicaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents familiaux" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 60 }, value: form.atcd_familiaux, onChange: (e) => c("atcd_familiaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Allergies connues (m\xE9dicamenteuses, alimentaires, etc.)" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 60 }, value: form.allergies, onChange: (e) => c("allergies", e.target.value) }))), /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: chargement, style: btnPrimary() }, chargement ? "Un instant\u2026" : mode === "connexion" ? "Se connecter" : "Cr\xE9er mon compte")));
 }
-
 function InfirmierAuth({ onRetour, onConnecter }) {
   const [mode, setMode] = useState("connexion");
   const [email, setEmail] = useState("");
@@ -499,10 +349,10 @@ function InfirmierAuth({ onRetour, onConnecter }) {
   const [chargement, setChargement] = useState(false);
   const [succes, setSucces] = useState(false);
   const c = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
   async function soumettre(e) {
     e.preventDefault();
-    setErreur(""); setChargement(true);
+    setErreur("");
+    setChargement(true);
     try {
       if (mode === "connexion") {
         await onConnecter(email, password);
@@ -510,95 +360,47 @@ function InfirmierAuth({ onRetour, onConnecter }) {
         if (!fichierCarte || !fichierDiplome) throw new Error("Merci de joindre les deux documents.");
         const res = await auth.signUp(email.trim().toLowerCase(), password);
         const token = res.access_token;
-        if (!token) throw new Error("Confirmation e-mail encore activée côté Supabase — désactive-la.");
+        if (!token) throw new Error("Confirmation e-mail encore activ\xE9e c\xF4t\xE9 Supabase \u2014 d\xE9sactive-la.");
         const userId = res.user.id;
         const cheminCarte = await uploadDocument(userId, fichierCarte, "carte", token);
         const cheminDiplome = await uploadDocument(userId, fichierDiplome, "diplome", token);
         await profilesTable.insert(
           {
-            id: userId, role: "infirmier", email: email.trim().toLowerCase(), verified: false,
-            nom: form.nom, prenom: form.prenom, age: Number(form.age), telephone: form.telephone,
-            residence: form.residence, specialite: form.specialite, diplome_reconnu: form.diplomeReconnu,
-            photo_carte_url: cheminCarte, photo_diplome_url: cheminDiplome,
+            id: userId,
+            role: "infirmier",
+            email: email.trim().toLowerCase(),
+            verified: false,
+            nom: form.nom,
+            prenom: form.prenom,
+            age: Number(form.age),
+            telephone: form.telephone,
+            residence: form.residence,
+            specialite: form.specialite,
+            diplome_reconnu: form.diplomeReconnu,
+            photo_carte_url: cheminCarte,
+            photo_diplome_url: cheminDiplome
           },
           token
         );
         setSucces(true);
       }
-    } catch (err) { setErreur(err.message); }
-    finally { setChargement(false); }
+    } catch (err) {
+      setErreur(err.message);
+    } finally {
+      setChargement(false);
+    }
   }
-
   if (succes) {
-    return (
-      <div style={{ textAlign: "center", padding: "20px 0" }}>
-        <div style={{ fontSize: 28, color: T.primary }}>✓</div>
-        <h2 style={{ ...titreStyle, textAlign: "center", marginTop: 12 }}>Compte créé</h2>
-        <p style={{ fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" }}>
-          Ton compte et tes documents sont en attente de validation par l'administrateur.
-        </p>
-        <button onClick={onRetour} style={btnPrimary()}>Retour à l'accueil</button>
-      </div>
-    );
+    return /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", padding: "20px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28, color: T.primary } }, "\u2713"), /* @__PURE__ */ React.createElement("h2", { style: { ...titreStyle, textAlign: "center", marginTop: 12 } }, "Compte cr\xE9\xE9"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 14.5, color: "#4B5A4F", maxWidth: 360, margin: "0 auto 22px" } }, "Ton compte et tes documents sont en attente de validation par l'administrateur."), /* @__PURE__ */ React.createElement("button", { onClick: onRetour, style: btnPrimary() }, "Retour \xE0 l'accueil"));
   }
-
-  return (
-    <div>
-      <RetourLink onClick={onRetour} />
-      <h2 style={titreStyle}>Espace infirmier</h2>
-      <ModeToggle mode={mode} onChange={setMode} />
-      <form onSubmit={soumettre}>
-        <Champ label="E-mail"><input style={inputStyle} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Champ>
-        <Champ label="Mot de passe"><input style={inputStyle} type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></Champ>
-        {mode === "inscription" && (
-          <>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ flex: 1 }}><Champ label="Nom"><input style={inputStyle} required value={form.nom} onChange={(e) => c("nom", e.target.value)} /></Champ></div>
-              <div style={{ flex: 1 }}><Champ label="Prénom"><input style={inputStyle} required value={form.prenom} onChange={(e) => c("prenom", e.target.value)} /></Champ></div>
-            </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ flex: 1 }}><Champ label="Âge"><input style={inputStyle} required type="number" min="18" value={form.age} onChange={(e) => c("age", e.target.value)} /></Champ></div>
-              <div style={{ flex: 2 }}><Champ label="Téléphone"><input style={inputStyle} required value={form.telephone} onChange={(e) => c("telephone", e.target.value)} /></Champ></div>
-            </div>
-            <Champ label="Résidence"><input style={inputStyle} required value={form.residence} onChange={(e) => c("residence", e.target.value)} /></Champ>
-            <Champ label="Spécialité / filière étudiée"><input style={inputStyle} required value={form.specialite} onChange={(e) => c("specialite", e.target.value)} /></Champ>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, fontSize: 14 }}>
-              <input type="checkbox" required checked={form.diplomeReconnu} onChange={(e) => c("diplomeReconnu", e.target.checked)} />
-              Je certifie que mon diplôme est reconnu par l'État
-            </label>
-            <FichierChamp label="Photo de la carte de l'ordre des infirmiers" fichier={fichierCarte} onChange={setFichierCarte} />
-            <FichierChamp label="Photo du diplôme" fichier={fichierDiplome} onChange={setFichierDiplome} />
-          </>
-        )}
-        <ErreurTexte>{erreur}</ErreurTexte>
-        <button type="submit" disabled={chargement} style={btnPrimary({ marginTop: 4 })}>{chargement ? "Un instant…" : mode === "connexion" ? "Se connecter" : "Créer mon compte"}</button>
-      </form>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(RetourLink, { onClick: onRetour }), /* @__PURE__ */ React.createElement("h2", { style: titreStyle }, "Espace infirmier"), /* @__PURE__ */ React.createElement(ModeToggle, { mode, onChange: setMode }), /* @__PURE__ */ React.createElement("form", { onSubmit: soumettre }, /* @__PURE__ */ React.createElement(Champ, { label: "E-mail" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "email", required: true, value: email, onChange: (e) => setEmail(e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Mot de passe" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "password", required: true, minLength: 6, value: password, onChange: (e) => setPassword(e.target.value) })), mode === "inscription" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "Nom" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.nom, onChange: (e) => c("nom", e.target.value) }))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "Pr\xE9nom" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.prenom, onChange: (e) => c("prenom", e.target.value) })))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "\xC2ge" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, type: "number", min: "18", value: form.age, onChange: (e) => c("age", e.target.value) }))), /* @__PURE__ */ React.createElement("div", { style: { flex: 2 } }, /* @__PURE__ */ React.createElement(Champ, { label: "T\xE9l\xE9phone" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.telephone, onChange: (e) => c("telephone", e.target.value) })))), /* @__PURE__ */ React.createElement(Champ, { label: "R\xE9sidence" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.residence, onChange: (e) => c("residence", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Sp\xE9cialit\xE9 / fili\xE8re \xE9tudi\xE9e" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: form.specialite, onChange: (e) => c("specialite", e.target.value) })), /* @__PURE__ */ React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 18, fontSize: 14 } }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", required: true, checked: form.diplomeReconnu, onChange: (e) => c("diplomeReconnu", e.target.checked) }), "Je certifie que mon dipl\xF4me est reconnu par l'\xC9tat"), /* @__PURE__ */ React.createElement(FichierChamp, { label: "Photo de la carte de l'ordre des infirmiers", fichier: fichierCarte, onChange: setFichierCarte }), /* @__PURE__ */ React.createElement(FichierChamp, { label: "Photo du dipl\xF4me", fichier: fichierDiplome, onChange: setFichierDiplome })), /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: chargement, style: btnPrimary({ marginTop: 4 }) }, chargement ? "Un instant\u2026" : mode === "connexion" ? "Se connecter" : "Cr\xE9er mon compte")));
 }
-
 function ModeToggle({ mode, onChange }) {
-  return (
-    <div style={{ display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20 }}>
-      {[["connexion", "Se connecter"], ["inscription", "Créer un compte"]].map(([key, label]) => (
-        <button key={key} onClick={() => onChange(key)} type="button" style={{ background: "none", border: "none", padding: "0 0 11px", fontSize: 14, fontWeight: mode === key ? 600 : 400, color: mode === key ? T.ink : T.muted, borderBottom: mode === key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 }}>{label}</button>
-      ))}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 20, borderBottom: `1px solid ${T.line}`, marginBottom: 20 } }, [["connexion", "Se connecter"], ["inscription", "Cr\xE9er un compte"]].map(([key, label]) => /* @__PURE__ */ React.createElement("button", { key, onClick: () => onChange(key), type: "button", style: { background: "none", border: "none", padding: "0 0 11px", fontSize: 14, fontWeight: mode === key ? 600 : 400, color: mode === key ? T.ink : T.muted, borderBottom: mode === key ? `2px solid ${T.primary}` : "2px solid transparent", cursor: "pointer", marginBottom: -1 } }, label)));
 }
-
 function FichierChamp({ label, fichier, onChange }) {
-  return (
-    <Champ label={label}>
-      <label style={{ display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "12px 14px", cursor: "pointer", background: "#FFFEFC" }}>
-        <span>{fichier ? "📄" : "📎"}</span>
-        <span style={{ fontSize: 13.5, color: fichier ? T.ink : T.muted }}>{fichier ? fichier.name : "Choisir un fichier"}</span>
-        <input type="file" accept="image/*" onChange={(e) => onChange(e.target.files[0] || null)} style={{ display: "none" }} />
-      </label>
-    </Champ>
-  );
+  return /* @__PURE__ */ React.createElement(Champ, { label }, /* @__PURE__ */ React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "12px 14px", cursor: "pointer", background: "#FFFEFC" } }, /* @__PURE__ */ React.createElement("span", null, fichier ? "\u{1F4C4}" : "\u{1F4CE}"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13.5, color: fichier ? T.ink : T.muted } }, fichier ? fichier.name : "Choisir un fichier"), /* @__PURE__ */ React.createElement("input", { type: "file", accept: "image/*", onChange: (e) => onChange(e.target.files[0] || null), style: { display: "none" } })));
 }
-
 function PatientEspace({ session }) {
   const [onglet, setOnglet] = useState("nouvelle");
   const [form, setForm] = useState({ soins: [], heure: "", notes: "", urgent: false });
@@ -614,28 +416,36 @@ function PatientEspace({ session }) {
   function basculerSoin(s) {
     setForm((f) => ({
       ...f,
-      soins: f.soins.includes(s) ? f.soins.filter((x) => x !== s) : [...f.soins, s],
+      soins: f.soins.includes(s) ? f.soins.filter((x) => x !== s) : [...f.soins, s]
     }));
   }
-
   async function charger() {
     setChargement(true);
     try {
       const rows = await demandesTable.select(`patient_id=eq.${session.userId}&order=created_at.desc&select=*`, session.token);
       setDemandes(rows);
-    } catch (e) { setErreur(e.message); }
-    finally { setChargement(false); }
+    } catch (e) {
+      setErreur(e.message);
+    } finally {
+      setChargement(false);
+    }
   }
-  useEffect(() => { charger(); }, [onglet]);
-
+  useEffect(() => {
+    charger();
+  }, [onglet]);
   const tarifSoin = form.soins.reduce((s, nom) => s + TARIFS[nom], 0);
   const total = form.soins.length ? tarifSoin + DEPLACEMENT : 0;
-
   async function envoyer(e) {
     e.preventDefault();
     if (!form.heure || form.soins.length === 0) return;
-    if (pourAutrui && (!soigne.nom || !soigne.age || !soigne.lien)) { setErreur("Merci de compléter les informations de la personne soignée."); return; }
-    if (soigneMineur && (!soigne.tuteur_nom || !soigne.tuteur_telephone)) { setErreur("Un tuteur est requis pour un(e) mineur(e)."); return; }
+    if (pourAutrui && (!soigne.nom || !soigne.age || !soigne.lien)) {
+      setErreur("Merci de compl\xE9ter les informations de la personne soign\xE9e.");
+      return;
+    }
+    if (soigneMineur && (!soigne.tuteur_nom || !soigne.tuteur_telephone)) {
+      setErreur("Un tuteur est requis pour un(e) mineur(e).");
+      return;
+    }
     setErreur("");
     try {
       await demandesTable.insert({
@@ -643,111 +453,38 @@ function PatientEspace({ session }) {
         patient_nom: session.profile.nom,
         patient_telephone: session.profile.telephone,
         patient_quartier: session.profile.quartier,
-        soin: form.soins.join(", "), tarif_soin: tarifSoin, deplacement: DEPLACEMENT, total,
-        heure: form.heure, notes: form.notes, urgent: form.urgent, statut: "attente",
+        soin: form.soins.join(", "),
+        tarif_soin: tarifSoin,
+        deplacement: DEPLACEMENT,
+        total,
+        heure: form.heure,
+        notes: form.notes,
+        urgent: form.urgent,
+        statut: "attente",
         pour_autrui: pourAutrui,
         soigne_nom: pourAutrui ? soigne.nom : session.profile.nom,
         soigne_age: pourAutrui ? Number(soigne.age) : session.profile.age,
         soigne_sexe: pourAutrui ? soigne.sexe : session.profile.sexe,
-        soigne_lien: pourAutrui ? soigne.lien : "Moi-même",
+        soigne_lien: pourAutrui ? soigne.lien : "Moi-m\xEAme",
         soigne_atcd_medicaux: pourAutrui ? soigne.atcd_medicaux : session.profile.atcd_medicaux,
         soigne_atcd_chirurgicaux: pourAutrui ? soigne.atcd_chirurgicaux : session.profile.atcd_chirurgicaux,
         soigne_atcd_familiaux: pourAutrui ? soigne.atcd_familiaux : session.profile.atcd_familiaux,
         soigne_allergies: pourAutrui ? soigne.allergies : session.profile.allergies,
-        soigne_tuteur_nom: pourAutrui ? (soigneMineur ? soigne.tuteur_nom : null) : session.profile.tuteur_nom,
-        soigne_tuteur_telephone: pourAutrui ? (soigneMineur ? soigne.tuteur_telephone : null) : session.profile.tuteur_telephone,
+        soigne_tuteur_nom: pourAutrui ? soigneMineur ? soigne.tuteur_nom : null : session.profile.tuteur_nom,
+        soigne_tuteur_telephone: pourAutrui ? soigneMineur ? soigne.tuteur_telephone : null : session.profile.tuteur_telephone
       }, session.token);
       setDernier({ ...form, tarifSoin, total });
-    } catch (err) { setErreur(err.message); }
+    } catch (err) {
+      setErreur(err.message);
+    }
   }
-
-  return (
-    <div>
-      <Onglets items={[{ key: "nouvelle", label: "Nouvelle demande" }, { key: "historique", label: "Mes demandes" }]} actif={onglet} onChange={setOnglet} />
-      <ErreurTexte>{erreur}</ErreurTexte>
-      {onglet === "nouvelle" && (
-        <div>
-          {!dernier ? (
-            <form onSubmit={envoyer}>
-              <Champ label="Pour qui est ce soin ?">
-                <div style={{ display: "flex", gap: 10, marginBottom: pourAutrui ? 14 : 0 }}>
-                  <button type="button" onClick={() => setPourAutrui(false)} style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${!pourAutrui ? T.primary : T.line}`, background: !pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" }}>Moi-même</button>
-                  <button type="button" onClick={() => setPourAutrui(true)} style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${pourAutrui ? T.primary : T.line}`, background: pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" }}>Une autre personne</button>
-                </div>
-                {pourAutrui && (
-                  <div style={{ border: `1px solid ${T.line}`, borderRadius: 8, padding: 14 }}>
-                    <Champ label="Nom complet de la personne"><input style={inputStyle} required value={soigne.nom} onChange={(e) => cs("nom", e.target.value)} /></Champ>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <div style={{ flex: 1 }}><Champ label="Âge"><input style={inputStyle} type="number" min="0" required value={soigne.age} onChange={(e) => cs("age", e.target.value)} /></Champ></div>
-                      <div style={{ flex: 1 }}>
-                        <Champ label="Sexe">
-                          <select style={inputStyle} value={soigne.sexe} onChange={(e) => cs("sexe", e.target.value)}><option>Femme</option><option>Homme</option></select>
-                        </Champ>
-                      </div>
-                    </div>
-                    <Champ label="Lien avec vous (ex. mère, enfant, ami...)"><input style={inputStyle} required value={soigne.lien} onChange={(e) => cs("lien", e.target.value)} /></Champ>
-                    {soigneMineur && (
-                      <div style={{ background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 }}>
-                        <p style={{ fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" }}>Personne mineure — un tuteur est requis.</p>
-                        <Champ label="Nom du tuteur"><input style={inputStyle} required value={soigne.tuteur_nom} onChange={(e) => cs("tuteur_nom", e.target.value)} /></Champ>
-                        <Champ label="Téléphone du tuteur"><input style={inputStyle} required value={soigne.tuteur_telephone} onChange={(e) => cs("tuteur_telephone", e.target.value)} /></Champ>
-                      </div>
-                    )}
-                    <Champ label="Antécédents médicaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_medicaux} onChange={(e) => cs("atcd_medicaux", e.target.value)} /></Champ>
-                    <Champ label="Antécédents chirurgicaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_chirurgicaux} onChange={(e) => cs("atcd_chirurgicaux", e.target.value)} /></Champ>
-                    <Champ label="Antécédents familiaux"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.atcd_familiaux} onChange={(e) => cs("atcd_familiaux", e.target.value)} /></Champ>
-                    <Champ label="Allergies connues"><textarea style={{ ...inputStyle, minHeight: 55 }} value={soigne.allergies} onChange={(e) => cs("allergies", e.target.value)} /></Champ>
-                  </div>
-                )}
-              </Champ>
-              <Champ label="Type(s) de soin — sélectionnez-en un ou plusieurs">
-                <div style={{ display: "grid", gap: 8 }}>
-                  {Object.keys(TARIFS).map((s) => (
-                    <label key={s} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${form.soins.includes(s) ? T.primary : T.line}`, borderRadius: 8, padding: "10px 12px", background: form.soins.includes(s) ? T.primaryLight : "#FFFEFC" }}>
-                      <input type="checkbox" checked={form.soins.includes(s)} onChange={() => basculerSoin(s)} />
-                      <span style={{ flex: 1, fontSize: 14 }}>{s}</span>
-                      <span style={{ fontSize: 13, color: T.muted }}>{formatFCFA(TARIFS[s])}</span>
-                    </label>
-                  ))}
-                </div>
-              </Champ>
-              <Champ label="Date et heure souhaitées"><input style={inputStyle} type="datetime-local" required value={form.heure} onChange={(e) => c("heure", e.target.value)} /></Champ>
-              <Champ label="Informations complémentaires (facultatif)"><textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical" }} value={form.notes} onChange={(e) => c("notes", e.target.value)} /></Champ>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14 }}>
-                <input type="checkbox" checked={form.urgent} onChange={(e) => c("urgent", e.target.checked)} /> Ce soin est urgent
-              </label>
-              <div style={{ background: T.primaryLight, borderRadius: 10, padding: "14px 16px", marginBottom: 20, fontSize: 14 }}>
-                {form.soins.length === 0 ? (
-                  <span style={{ color: T.muted }}>Sélectionnez au moins un soin</span>
-                ) : (
-                  form.soins.map((s) => <Ligne key={s} label={s} valeur={formatFCFA(TARIFS[s])} />)
-                )}
-                <Ligne label="Déplacement (dû même si le soin n'est pas réalisé)" valeur={formatFCFA(DEPLACEMENT)} />
-                <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8 }}><Ligne label="Total" valeur={formatFCFA(total)} fort /></div>
-              </div>
-              <button type="submit" disabled={form.soins.length === 0} style={btnPrimary(form.soins.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {})}>Envoyer la demande</button>
-            </form>
-          ) : (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: T.primary, fontSize: 15, marginBottom: 10 }}>✓ Demande envoyée</div>
-              <p style={{ fontSize: 13.5, color: T.muted, marginBottom: 16 }}>
-                Dès qu'un infirmier accepte votre demande, l'invitation à payer apparaîtra dans l'onglet "Mes demandes".
-              </p>
-              <button style={btnGhost()} onClick={() => { setDernier(null); charger(); }}>Faire une autre demande</button>
-            </div>
-          )}
-        </div>
-      )}
-      {onglet === "historique" && (
-        chargement ? <Spinner /> :
-        demandes.length === 0 ? <VideMessage texte="Aucune demande pour le moment." /> :
-        demandes.map((d) => <DemandeRowPatient key={d.id} d={d} />)
-      )}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(Onglets, { items: [{ key: "nouvelle", label: "Nouvelle demande" }, { key: "historique", label: "Mes demandes" }], actif: onglet, onChange: setOnglet }), /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), onglet === "nouvelle" && /* @__PURE__ */ React.createElement("div", null, !dernier ? /* @__PURE__ */ React.createElement("form", { onSubmit: envoyer }, /* @__PURE__ */ React.createElement(Champ, { label: "Pour qui est ce soin ?" }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginBottom: pourAutrui ? 14 : 0 } }, /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setPourAutrui(false), style: { flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${!pourAutrui ? T.primary : T.line}`, background: !pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" } }, "Moi-m\xEAme"), /* @__PURE__ */ React.createElement("button", { type: "button", onClick: () => setPourAutrui(true), style: { flex: 1, padding: "9px 10px", borderRadius: 8, border: `1px solid ${pourAutrui ? T.primary : T.line}`, background: pourAutrui ? T.primaryLight : "#FFFEFC", fontSize: 13.5, cursor: "pointer" } }, "Une autre personne")), pourAutrui && /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${T.line}`, borderRadius: 8, padding: 14 } }, /* @__PURE__ */ React.createElement(Champ, { label: "Nom complet de la personne" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: soigne.nom, onChange: (e) => cs("nom", e.target.value) })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "\xC2ge" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "number", min: "0", required: true, value: soigne.age, onChange: (e) => cs("age", e.target.value) }))), /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement(Champ, { label: "Sexe" }, /* @__PURE__ */ React.createElement("select", { style: inputStyle, value: soigne.sexe, onChange: (e) => cs("sexe", e.target.value) }, /* @__PURE__ */ React.createElement("option", null, "Femme"), /* @__PURE__ */ React.createElement("option", null, "Homme"))))), /* @__PURE__ */ React.createElement(Champ, { label: "Lien avec vous (ex. m\xE8re, enfant, ami...)" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: soigne.lien, onChange: (e) => cs("lien", e.target.value) })), soigneMineur && /* @__PURE__ */ React.createElement("div", { style: { background: T.goldBg, borderRadius: 8, padding: "12px 14px", marginBottom: 18 } }, /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13, color: "#6B4E1E", margin: "0 0 10px" } }, "Personne mineure \u2014 un tuteur est requis."), /* @__PURE__ */ React.createElement(Champ, { label: "Nom du tuteur" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: soigne.tuteur_nom, onChange: (e) => cs("tuteur_nom", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "T\xE9l\xE9phone du tuteur" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, required: true, value: soigne.tuteur_telephone, onChange: (e) => cs("tuteur_telephone", e.target.value) }))), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents m\xE9dicaux" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 55 }, value: soigne.atcd_medicaux, onChange: (e) => cs("atcd_medicaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents chirurgicaux" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 55 }, value: soigne.atcd_chirurgicaux, onChange: (e) => cs("atcd_chirurgicaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Ant\xE9c\xE9dents familiaux" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 55 }, value: soigne.atcd_familiaux, onChange: (e) => cs("atcd_familiaux", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Allergies connues" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 55 }, value: soigne.allergies, onChange: (e) => cs("allergies", e.target.value) })))), /* @__PURE__ */ React.createElement(Champ, { label: "Type(s) de soin \u2014 s\xE9lectionnez-en un ou plusieurs" }, /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gap: 8 } }, Object.keys(TARIFS).map((s) => /* @__PURE__ */ React.createElement("label", { key: s, style: { display: "flex", alignItems: "center", gap: 10, border: `1px solid ${form.soins.includes(s) ? T.primary : T.line}`, borderRadius: 8, padding: "10px 12px", background: form.soins.includes(s) ? T.primaryLight : "#FFFEFC" } }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", checked: form.soins.includes(s), onChange: () => basculerSoin(s) }), /* @__PURE__ */ React.createElement("span", { style: { flex: 1, fontSize: 14 } }, s), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, color: T.muted } }, formatFCFA(TARIFS[s])))))), /* @__PURE__ */ React.createElement(Champ, { label: "Date et heure souhait\xE9es" }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, type: "datetime-local", required: true, value: form.heure, onChange: (e) => c("heure", e.target.value) })), /* @__PURE__ */ React.createElement(Champ, { label: "Informations compl\xE9mentaires (facultatif)" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 70, resize: "vertical" }, value: form.notes, onChange: (e) => c("notes", e.target.value) })), /* @__PURE__ */ React.createElement("label", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 20, fontSize: 14 } }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", checked: form.urgent, onChange: (e) => c("urgent", e.target.checked) }), " Ce soin est urgent"), /* @__PURE__ */ React.createElement("div", { style: { background: T.primaryLight, borderRadius: 10, padding: "14px 16px", marginBottom: 20, fontSize: 14 } }, form.soins.length === 0 ? /* @__PURE__ */ React.createElement("span", { style: { color: T.muted } }, "S\xE9lectionnez au moins un soin") : form.soins.map((s) => /* @__PURE__ */ React.createElement(Ligne, { key: s, label: s, valeur: formatFCFA(TARIFS[s]) })), /* @__PURE__ */ React.createElement(Ligne, { label: "D\xE9placement (d\xFB m\xEAme si le soin n'est pas r\xE9alis\xE9)", valeur: formatFCFA(DEPLACEMENT) }), /* @__PURE__ */ React.createElement("div", { style: { borderTop: `1px solid ${T.line}`, marginTop: 8, paddingTop: 8 } }, /* @__PURE__ */ React.createElement(Ligne, { label: "Total", valeur: formatFCFA(total), fort: true }))), /* @__PURE__ */ React.createElement("button", { type: "submit", disabled: form.soins.length === 0, style: btnPrimary(form.soins.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {}) }, "Envoyer la demande")) : /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, color: T.primary, fontSize: 15, marginBottom: 10 } }, "\u2713 Demande envoy\xE9e"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 13.5, color: T.muted, marginBottom: 16 } }, `D\xE8s qu'un infirmier accepte votre demande, l'invitation \xE0 payer appara\xEEtra dans l'onglet "Mes demandes".`), /* @__PURE__ */ React.createElement("button", { style: btnGhost(), onClick: () => {
+    setDernier(null);
+    charger();
+  } }, "Faire une autre demande"))), onglet === "historique" && (chargement ? /* @__PURE__ */ React.createElement(Spinner, null) : demandes.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucune demande pour le moment." }) : demandes.map((d) => /* @__PURE__ */ React.createElement(DemandeRowPatient, { key: d.id, d }))));
 }
 function Ligne({ label, valeur, fort }) {
-  return <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontWeight: fort ? 700 : 400 }}><span>{label}</span><span>{valeur}</span></div>;
+  return /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 4, fontWeight: fort ? 700 : 400 } }, /* @__PURE__ */ React.createElement("span", null, label), /* @__PURE__ */ React.createElement("span", null, valeur));
 }
 function LigneCopiable({ label, valeur }) {
   const [copie, setCopie] = useState(false);
@@ -756,110 +493,73 @@ function LigneCopiable({ label, valeur }) {
       await navigator.clipboard.writeText(valeur.replace(/\s/g, ""));
       setCopie(true);
       setTimeout(() => setCopie(false), 1800);
-    } catch (e) {}
+    } catch (e) {
+    }
   }
-  return (
-    <button
-      onClick={copier}
-      style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", padding: "8px 0", cursor: "pointer", textAlign: "left" }}
-    >
-      <span style={{ color: T.ink }}>{label}</span>
-      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontWeight: 600 }}>{valeur}</span>
-        <span style={{ fontSize: 12, color: copie ? T.primary : T.muted }}>{copie ? "✓ copié" : "copier"}</span>
-      </span>
-    </button>
+  return /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: copier,
+      style: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", padding: "8px 0", cursor: "pointer", textAlign: "left" }
+    },
+    /* @__PURE__ */ React.createElement("span", { style: { color: T.ink } }, label),
+    /* @__PURE__ */ React.createElement("span", { style: { display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, valeur), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: copie ? T.primary : T.muted } }, copie ? "\u2713 copi\xE9" : "copier"))
   );
 }
 function PaiementInfo({ total }) {
   const frais = Math.round(total * FRAIS_RETRAIT_TAUX);
   const totalAvecFrais = total + frais + FONDS_SOUTIEN;
-  return (
-    <div style={{ border: `1px solid ${T.urgent}`, borderRadius: 10, padding: "16px 18px" }}>
-      <div style={{ fontWeight: 700, marginBottom: 6, color: T.urgent }}>⚠ Paiement immédiat requis</div>
-      <p style={{ fontSize: 12.5, color: "#4B5A4F", marginTop: 0, marginBottom: 10, lineHeight: 1.5 }}>
-        Dès qu'un infirmier accepte, le paiement doit être effectué <strong>immédiatement</strong> — c'est ce qui garantit son déplacement. <strong>Aucun paiement en espèces n'est accepté.</strong>
-      </p>
-      <Ligne label="Sous-total soins" valeur={formatFCFA(total)} />
-      <Ligne label="Frais de retrait" valeur={formatFCFA(frais)} />
-      <Ligne label="Fonds de soutien" valeur={formatFCFA(FONDS_SOUTIEN)} />
-      <div style={{ borderTop: `1px solid ${T.line}`, marginTop: 6, paddingTop: 6 }}>
-        <Ligne label="Total à payer" valeur={formatFCFA(totalAvecFrais)} fort />
-      </div>
-      <div style={{ marginTop: 10 }}>
-        <LigneCopiable label="Orange Money" valeur={PAIEMENT.orange} />
-        <LigneCopiable label="Wave" valeur={PAIEMENT.wave} />
-      </div>
-      <p style={{ fontSize: 12.5, color: T.muted, marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
-        Copiez l'un des numéros ci-dessus pour effectuer la transaction par le moyen de paiement de votre choix.
-      </p>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${T.urgent}`, borderRadius: 10, padding: "16px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, marginBottom: 6, color: T.urgent } }, "\u26A0 Paiement imm\xE9diat requis"), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 12.5, color: "#4B5A4F", marginTop: 0, marginBottom: 10, lineHeight: 1.5 } }, "D\xE8s qu'un infirmier accepte, le paiement doit \xEAtre effectu\xE9 ", /* @__PURE__ */ React.createElement("strong", null, "imm\xE9diatement"), " \u2014 c'est ce qui garantit son d\xE9placement. ", /* @__PURE__ */ React.createElement("strong", null, "Aucun paiement en esp\xE8ces n'est accept\xE9.")), /* @__PURE__ */ React.createElement(Ligne, { label: "Sous-total soins", valeur: formatFCFA(total) }), /* @__PURE__ */ React.createElement(Ligne, { label: "Frais de retrait", valeur: formatFCFA(frais) }), /* @__PURE__ */ React.createElement(Ligne, { label: "Fonds de soutien", valeur: formatFCFA(FONDS_SOUTIEN) }), /* @__PURE__ */ React.createElement("div", { style: { borderTop: `1px solid ${T.line}`, marginTop: 6, paddingTop: 6 } }, /* @__PURE__ */ React.createElement(Ligne, { label: "Total \xE0 payer", valeur: formatFCFA(totalAvecFrais), fort: true })), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement(LigneCopiable, { label: "Orange Money", valeur: PAIEMENT.orange }), /* @__PURE__ */ React.createElement(LigneCopiable, { label: "Wave", valeur: PAIEMENT.wave })), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 12.5, color: T.muted, marginTop: 10, marginBottom: 0, lineHeight: 1.5 } }, "Copiez l'un des num\xE9ros ci-dessus pour effectuer la transaction par le moyen de paiement de votre choix."));
 }
 function DemandeRowPatient({ d }) {
   const s = STATUS[d.statut];
-  return (
-    <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: s.color }}>{s.label}</span>
-      </div>
-      <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-        {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} · {formatFCFA(d.total)}
-        {d.infirmier_nom ? ` · ${d.infirmier_nom}` : ""}
-      </div>
-      {d.statut === "acceptee" && (
-        <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 13, color: T.primary, fontWeight: 600, marginBottom: 6 }}>Infirmier(ère) assigné(e) — à régler maintenant :</div>
-          <PaiementInfo total={d.total} />
-        </div>
-      )}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 14.5 } }, d.soin), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12.5, fontWeight: 600, color: s.color } }, s.label)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 4 } }, new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }), " \xB7 ", formatFCFA(d.total), d.infirmier_nom ? ` \xB7 ${d.infirmier_nom}` : ""), d.statut === "acceptee" && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.primary, fontWeight: 600, marginBottom: 6 } }, "Infirmier(\xE8re) assign\xE9(e) \u2014 \xE0 r\xE9gler maintenant :"), /* @__PURE__ */ React.createElement(PaiementInfo, { total: d.total })));
 }
-
 function InfirmierEspace({ session, onProfilChange }) {
   const [onglet, setOnglet] = useState("disponibles");
   const [demandes, setDemandes] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState("");
-
   async function charger() {
     setChargement(true);
     try {
       const rows = await demandesTable.select(`or=(statut.eq.attente,infirmier_id.eq.${session.userId})&order=created_at.desc&select=*`, session.token);
       setDemandes(rows);
-    } catch (e) { setErreur(e.message); }
-    finally { setChargement(false); }
+    } catch (e) {
+      setErreur(e.message);
+    } finally {
+      setChargement(false);
+    }
   }
-  useEffect(() => { if (session.profile.verified) charger(); }, [onglet]);
-
+  useEffect(() => {
+    if (session.profile.verified) charger();
+  }, [onglet]);
   if (!session.profile.verified) {
-    return (
-      <div style={{ textAlign: "center", padding: "30px 10px" }}>
-        <div style={{ fontSize: 28 }}>⚠</div>
-        <p style={{ marginTop: 12, color: "#4B5A4F", fontSize: 14.5 }}>Votre compte est en attente de validation par l'administrateur.</p>
-      </div>
-    );
+    return /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", padding: "30px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28 } }, "\u26A0"), /* @__PURE__ */ React.createElement("p", { style: { marginTop: 12, color: "#4B5A4F", fontSize: 14.5 } }, "Votre compte est en attente de validation par l'administrateur."));
   }
-
   async function accepter(id) {
     try {
       await demandesTable.update(`id=eq.${id}`, { statut: "acceptee", infirmier_id: session.userId, infirmier_nom: `${session.profile.prenom} ${session.profile.nom}` }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function enregistrerConstantes(id, constantes) {
     try {
       await demandesTable.update(`id=eq.${id}`, constantes, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function enregistrerDetails(id, details) {
     try {
       await demandesTable.update(`id=eq.${id}`, { details_soin: details }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function terminer(id, demande) {
     try {
@@ -871,7 +571,9 @@ function InfirmierEspace({ session, onProfilChange }) {
         onProfilChange(nouveauProfil);
       }
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function annuler(id) {
     try {
@@ -879,66 +581,54 @@ function InfirmierEspace({ session, onProfilChange }) {
       await profilesTable.update(`id=eq.${session.userId}`, { penalite_active: true }, session.token);
       onProfilChange({ ...session.profile, penalite_active: true });
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function signaler(id, motif, details) {
     try {
       await demandesTable.update(`id=eq.${id}`, { signalement: true, signalement_motif: motif, signalement_details: details }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
-
   const disponibles = demandes.filter((d) => d.statut === "attente");
   const mesInterventions = demandes.filter((d) => d.infirmier_id === session.userId);
   const gains = mesInterventions.filter((d) => d.statut === "terminee").reduce((s, d) => s + Math.round(d.tarif_soin * (1 - COMMISSION_TAUX) * (d.penalite_appliquee ? 0.5 : 1)) + d.deplacement, 0);
-
-  return (
-    <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 13.5, color: T.muted }}>
-        <span>{session.profile.specialite}</span><span>·</span><span>{session.profile.residence}</span>
-      </div>
-      {session.profile.penalite_active && (
-        <div style={{ background: T.urgentBg || "#F6E5E2", color: T.urgent, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13 }}>
-          Pénalité en attente : votre prochain soin terminé sera payé à 50%, suite à une annulation.
-        </div>
-      )}
-      <div style={{ background: T.primaryLight, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 13.5, color: "#4B5A4F" }}>Vos gains cumulés (soins terminés)</span>
-        <strong style={{ fontSize: 16, color: T.primary }}>{formatFCFA(gains)}</strong>
-      </div>
-      <ErreurTexte>{erreur}</ErreurTexte>
-      <Onglets items={[{ key: "disponibles", label: `Disponibles (${disponibles.length})` }, { key: "interventions", label: "Mes interventions" }]} actif={onglet} onChange={setOnglet} />
-      {chargement ? <Spinner /> : onglet === "disponibles" ? (
-        disponibles.length === 0 ? <VideMessage texte="Aucune demande disponible." /> :
-        disponibles.map((d) => <DemandeRowInfirmier key={d.id} d={d} onAccepter={() => accepter(d.id)} />)
-      ) : (
-        mesInterventions.length === 0 ? <VideMessage texte="Aucune intervention." /> :
-        mesInterventions.map((d) => (
-          <DemandeRowInfirmier
-            key={d.id} d={d} detaillee token={session.token} userId={session.userId}
-            onEnregistrerConstantes={(c) => enregistrerConstantes(d.id, c)}
-            onEnregistrerDetails={(det) => enregistrerDetails(d.id, det)}
-            onTerminer={() => terminer(d.id, d)}
-            onAnnuler={() => annuler(d.id)}
-            onSignaler={(motif, details) => signaler(d.id, motif, details)}
-          />
-        ))
-      )}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 12, marginBottom: 12, fontSize: 13.5, color: T.muted } }, /* @__PURE__ */ React.createElement("span", null, session.profile.specialite), /* @__PURE__ */ React.createElement("span", null, "\xB7"), /* @__PURE__ */ React.createElement("span", null, session.profile.residence)), session.profile.penalite_active && /* @__PURE__ */ React.createElement("div", { style: { background: T.urgentBg || "#F6E5E2", color: T.urgent, borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13 } }, "P\xE9nalit\xE9 en attente : votre prochain soin termin\xE9 sera pay\xE9 \xE0 50%, suite \xE0 une annulation."), /* @__PURE__ */ React.createElement("div", { style: { background: T.primaryLight, borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13.5, color: "#4B5A4F" } }, "Vos gains cumul\xE9s (soins termin\xE9s)"), /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 16, color: T.primary } }, formatFCFA(gains))), /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), /* @__PURE__ */ React.createElement(Onglets, { items: [{ key: "disponibles", label: `Disponibles (${disponibles.length})` }, { key: "interventions", label: "Mes interventions" }], actif: onglet, onChange: setOnglet }), chargement ? /* @__PURE__ */ React.createElement(Spinner, null) : onglet === "disponibles" ? disponibles.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucune demande disponible." }) : disponibles.map((d) => /* @__PURE__ */ React.createElement(DemandeRowInfirmier, { key: d.id, d, onAccepter: () => accepter(d.id) })) : mesInterventions.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucune intervention." }) : mesInterventions.map((d) => /* @__PURE__ */ React.createElement(
+    DemandeRowInfirmier,
+    {
+      key: d.id,
+      d,
+      detaillee: true,
+      token: session.token,
+      userId: session.userId,
+      onEnregistrerConstantes: (c) => enregistrerConstantes(d.id, c),
+      onEnregistrerDetails: (det) => enregistrerDetails(d.id, det),
+      onTerminer: () => terminer(d.id, d),
+      onAnnuler: () => annuler(d.id),
+      onSignaler: (motif, details) => signaler(d.id, motif, details)
+    }
+  )));
 }
-
 function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes, onEnregistrerDetails, onTerminer, onAnnuler, onSignaler, token, userId }) {
   const s = STATUS[d.statut];
   const [constantes, setConstantes] = useState({
-    constante_ta: d.constante_ta || "", constante_temp: d.constante_temp || "", constante_resp: d.constante_resp || "",
-    constante_pouls: d.constante_pouls || "", constante_spo2: d.constante_spo2 || "", constante_conscience: d.constante_conscience || "",
+    constante_ta: d.constante_ta || "",
+    constante_temp: d.constante_temp || "",
+    constante_resp: d.constante_resp || "",
+    constante_pouls: d.constante_pouls || "",
+    constante_spo2: d.constante_spo2 || "",
+    constante_conscience: d.constante_conscience || ""
   });
   const soinsListe = d.soin.split(",").map((x) => x.trim());
   const soinsAvecChamps = soinsListe.filter((s2) => SOIN_CHAMPS[s2]);
   const [detailsSoin, setDetailsSoin] = useState(() => {
     const base = {};
-    soinsAvecChamps.forEach((s2) => { base[s2] = (d.details_soin && d.details_soin[s2]) || {}; });
+    soinsAvecChamps.forEach((s2) => {
+      base[s2] = d.details_soin && d.details_soin[s2] || {};
+    });
     return base;
   });
   const [envoiPhoto, setEnvoiPhoto] = useState(false);
@@ -952,203 +642,105 @@ function DemandeRowInfirmier({ d, onAccepter, detaillee, onEnregistrerConstantes
     try {
       const chemin = await uploadDocument(userId, file, `pansement-${d.id}`, token);
       majDetail(soinNom, champKey, chemin);
-    } catch (e) {}
-    finally { setEnvoiPhoto(false); }
+    } catch (e) {
+    } finally {
+      setEnvoiPhoto(false);
+    }
   }
   const [afficherSignal, setAfficherSignal] = useState(false);
   const [motifs, setMotifs] = useState([]);
   const [details, setDetails] = useState("");
   const cc = (k, v) => setConstantes((f) => ({ ...f, [k]: v }));
   const constantesEnregistrees = !!d.constante_ta;
-  const OPTIONS_SIGNALEMENT = ["Cas à référer (dépasse mes compétences)", "Patient/patiente coopérant(e)", "Effets secondaires", "Autres"];
+  const OPTIONS_SIGNALEMENT = ["Cas \xE0 r\xE9f\xE9rer (d\xE9passe mes comp\xE9tences)", "Patient/patiente coop\xE9rant(e)", "Effets secondaires", "Autres"];
   function basculerMotif(m) {
-    setMotifs((ms) => (ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]));
+    setMotifs((ms) => ms.includes(m) ? ms.filter((x) => x !== m) : [...ms, m]);
   }
-
-  return (
-    <div style={{ borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: s.color }}>{s.label}</span>
-      </div>
-      <div style={{ fontSize: 13, color: T.muted, marginTop: 4, display: "grid", gap: 2 }}>
-        <span>🧑 {d.soigne_nom} {d.pour_autrui ? `(${d.soigne_lien}, ${d.soigne_age} ans)` : "(patient lui-même)"}</span>
-        <span>📍 {d.patient_quartier}</span>
-        <span>📞 {d.patient_telephone}</span>
-        <span>🕒 {new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-        {d.notes && <span style={{ fontStyle: "italic" }}>{d.notes}</span>}
-      </div>
-
-      {detaillee && (d.soigne_atcd_medicaux || d.soigne_atcd_chirurgicaux || d.soigne_atcd_familiaux || d.soigne_allergies || d.soigne_tuteur_nom) && (
-        <div style={{ marginTop: 10, background: T.bgAlt, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, display: "grid", gap: 3 }}>
-          {d.soigne_atcd_medicaux && <span><strong>Médicaux :</strong> {d.soigne_atcd_medicaux}</span>}
-          {d.soigne_atcd_chirurgicaux && <span><strong>Chirurgicaux :</strong> {d.soigne_atcd_chirurgicaux}</span>}
-          {d.soigne_atcd_familiaux && <span><strong>Familiaux :</strong> {d.soigne_atcd_familiaux}</span>}
-          {d.soigne_allergies && <span><strong>Allergies :</strong> {d.soigne_allergies}</span>}
-          {d.soigne_tuteur_nom && <span><strong>Tuteur :</strong> {d.soigne_tuteur_nom} — {d.soigne_tuteur_telephone}</span>}
-        </div>
-      )}
-
-      {!detaillee && onAccepter && <div style={{ marginTop: 10 }}><button style={btnGhost()} onClick={onAccepter}>Accepter</button></div>}
-
-      {detaillee && d.statut === "acceptee" && (
-        <div style={{ marginTop: 12, borderTop: `1px solid ${T.line}`, paddingTop: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Constantes du patient</div>
-          {constantesEnregistrees ? (
-            <div style={{ fontSize: 12.5, color: T.muted, display: "grid", gap: 2, marginBottom: 10 }}>
-              <span>TA {d.constante_ta} · T° {d.constante_temp} · R {d.constante_resp} · Pls {d.constante_pouls} · SpO2 {d.constante_spo2}</span>
-              <span>État de conscience : {d.constante_conscience}</span>
-            </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-              <input style={inputStyle} placeholder="TA (ex. 12/8)" value={constantes.constante_ta} onChange={(e) => cc("constante_ta", e.target.value)} />
-              <input style={inputStyle} placeholder="T° (°C)" value={constantes.constante_temp} onChange={(e) => cc("constante_temp", e.target.value)} />
-              <input style={inputStyle} placeholder="R (resp/min)" value={constantes.constante_resp} onChange={(e) => cc("constante_resp", e.target.value)} />
-              <input style={inputStyle} placeholder="Pls (bpm)" value={constantes.constante_pouls} onChange={(e) => cc("constante_pouls", e.target.value)} />
-              <input style={inputStyle} placeholder="SpO2 (%)" value={constantes.constante_spo2} onChange={(e) => cc("constante_spo2", e.target.value)} />
-              <input style={inputStyle} placeholder="État de conscience" value={constantes.constante_conscience} onChange={(e) => cc("constante_conscience", e.target.value)} />
-            </div>
-          )}
-          {!constantesEnregistrees && (
-            <button style={btnGhost()} onClick={() => onEnregistrerConstantes(constantes)}>Enregistrer les constantes</button>
-          )}
-
-          {soinsAvecChamps.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Détails du/des soin(s)</div>
-              {soinsAvecChamps.map((soinNom) => (
-                <div key={soinNom} style={{ border: `1px solid ${T.line}`, borderRadius: 8, padding: 12, marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.primary, marginBottom: 8 }}>{soinNom}</div>
-                  {detailsDejaEnregistres ? (
-                    <div style={{ fontSize: 12.5, color: T.muted, display: "grid", gap: 2 }}>
-                      {SOIN_CHAMPS[soinNom].map((champ) => {
-                        const val = (d.details_soin[soinNom] || {})[champ.key];
-                        if (!val) return null;
-                        if (champ.type === "photo") {
-                          return <button key={champ.key} style={btnGhost(T.muted)} onClick={() => ouvrirDocument(val, token)}>Voir la photo du pansement</button>;
-                        }
-                        return <span key={champ.key}>{champ.label} : {val}</span>;
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {SOIN_CHAMPS[soinNom].map((champ) => {
-                        const valeur = (detailsSoin[soinNom] || {})[champ.key] || "";
-                        if (champ.type === "select") {
-                          return (
-                            <select key={champ.key} style={inputStyle} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)}>
-                              <option value="">{champ.label}</option>
-                              {champ.options.map((o) => <option key={o} value={o}>{o}</option>)}
-                            </select>
-                          );
-                        }
-                        if (champ.type === "textarea") {
-                          return <textarea key={champ.key} style={{ ...inputStyle, minHeight: 55 }} placeholder={champ.label} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)} />;
-                        }
-                        if (champ.type === "photo") {
-                          return (
-                            <label key={champ.key} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
-                              <span>{valeur ? "📄" : "📎"}</span>
-                              <span style={{ fontSize: 13, color: T.muted }}>{valeur ? "Photo ajoutée" : envoiPhoto ? "Envoi…" : champ.label}</span>
-                              <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => gererPhoto(soinNom, champ.key, e.target.files[0])} />
-                            </label>
-                          );
-                        }
-                        return <input key={champ.key} style={inputStyle} type={champ.type} placeholder={champ.label} value={valeur} onChange={(e) => majDetail(soinNom, champ.key, e.target.value)} />;
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!detailsDejaEnregistres && (
-                <button style={btnGhost()} onClick={() => onEnregistrerDetails(detailsSoin)}>Enregistrer les détails du soin</button>
-              )}
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <button style={btnGhost(T.muted)} onClick={onTerminer}>Marquer terminée</button>
-            <button style={btnGhost(T.urgent)} onClick={() => { if (window.confirm("Annuler ce soin ? Une pénalité de -50% s'appliquera à votre prochain soin.")) onAnnuler(); }}>Annuler</button>
-            <button style={btnGhost(T.gold)} onClick={() => setAfficherSignal((v) => !v)}>Signaler</button>
-          </div>
-          <p style={{ fontSize: 11.5, color: T.urgent, marginTop: 8, marginBottom: 0 }}>
-            ⚠ Si vous acceptez un soin puis l'annulez ou ne l'effectuez pas, une pénalité de -50% sera automatiquement déduite de votre prochain soin terminé.
-          </p>
-
-          {afficherSignal && (
-            <div style={{ marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 }}>
-              <span style={{ display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 8 }}>Choses à signaler (une ou plusieurs)</span>
-              <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-                {OPTIONS_SIGNALEMENT.map((m) => (
-                  <label key={m} style={{ display: "flex", alignItems: "center", gap: 10, border: `1px solid ${motifs.includes(m) ? T.gold : T.line}`, borderRadius: 8, padding: "9px 12px", background: motifs.includes(m) ? T.goldBg : "#FFFEFC" }}>
-                    <input type="checkbox" checked={motifs.includes(m)} onChange={() => basculerMotif(m)} />
-                    <span style={{ fontSize: 13.5 }}>{m}</span>
-                  </label>
-                ))}
-              </div>
-              <Champ label="Détails"><textarea style={{ ...inputStyle, minHeight: 55 }} value={details} onChange={(e) => setDetails(e.target.value)} /></Champ>
-              <button
-                style={btnPrimary(motifs.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {})}
-                disabled={motifs.length === 0}
-                onClick={() => { onSignaler(motifs.join(", "), details); setAfficherSignal(false); setMotifs([]); setDetails(""); }}
-              >
-                Envoyer le signalement à l'administrateur
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {detaillee && d.signalement && (
-        <div style={{ marginTop: 10, fontSize: 12, color: T.gold }}>⚠ Signalé à l'administrateur — {d.signalement_motif}</div>
-      )}
-      {detaillee && d.statut === "annulee" && (
-        <div style={{ marginTop: 10, fontSize: 12, color: T.urgent }}>Soin annulé</div>
-      )}
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { borderLeft: `3px solid ${d.urgent ? T.urgent : s.color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" } }, /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 14.5 } }, d.soin), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12.5, fontWeight: 600, color: s.color } }, s.label)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 4, display: "grid", gap: 2 } }, /* @__PURE__ */ React.createElement("span", null, "\u{1F9D1} ", d.soigne_nom, " ", d.pour_autrui ? `(${d.soigne_lien}, ${d.soigne_age} ans)` : "(patient lui-m\xEAme)"), /* @__PURE__ */ React.createElement("span", null, "\u{1F4CD} ", d.patient_quartier), /* @__PURE__ */ React.createElement("span", null, "\u{1F4DE} ", d.patient_telephone), /* @__PURE__ */ React.createElement("span", null, "\u{1F552} ", new Date(d.heure).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })), d.notes && /* @__PURE__ */ React.createElement("span", { style: { fontStyle: "italic" } }, d.notes)), detaillee && (d.soigne_atcd_medicaux || d.soigne_atcd_chirurgicaux || d.soigne_atcd_familiaux || d.soigne_allergies || d.soigne_tuteur_nom) && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, background: T.bgAlt, borderRadius: 8, padding: "10px 12px", fontSize: 12.5, display: "grid", gap: 3 } }, d.soigne_atcd_medicaux && /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("strong", null, "M\xE9dicaux :"), " ", d.soigne_atcd_medicaux), d.soigne_atcd_chirurgicaux && /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("strong", null, "Chirurgicaux :"), " ", d.soigne_atcd_chirurgicaux), d.soigne_atcd_familiaux && /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("strong", null, "Familiaux :"), " ", d.soigne_atcd_familiaux), d.soigne_allergies && /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("strong", null, "Allergies :"), " ", d.soigne_allergies), d.soigne_tuteur_nom && /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("strong", null, "Tuteur :"), " ", d.soigne_tuteur_nom, " \u2014 ", d.soigne_tuteur_telephone)), !detaillee && onAccepter && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("button", { style: btnGhost(), onClick: onAccepter }, "Accepter")), detaillee && d.statut === "acceptee" && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12, borderTop: `1px solid ${T.line}`, paddingTop: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } }, "Constantes du patient"), constantesEnregistrees ? /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: T.muted, display: "grid", gap: 2, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", null, "TA ", d.constante_ta, " \xB7 T\xB0 ", d.constante_temp, " \xB7 R ", d.constante_resp, " \xB7 Pls ", d.constante_pouls, " \xB7 SpO2 ", d.constante_spo2), /* @__PURE__ */ React.createElement("span", null, "\xC9tat de conscience : ", d.constante_conscience)) : /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "TA (ex. 12/8)", value: constantes.constante_ta, onChange: (e) => cc("constante_ta", e.target.value) }), /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "T\xB0 (\xB0C)", value: constantes.constante_temp, onChange: (e) => cc("constante_temp", e.target.value) }), /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "R (resp/min)", value: constantes.constante_resp, onChange: (e) => cc("constante_resp", e.target.value) }), /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "Pls (bpm)", value: constantes.constante_pouls, onChange: (e) => cc("constante_pouls", e.target.value) }), /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "SpO2 (%)", value: constantes.constante_spo2, onChange: (e) => cc("constante_spo2", e.target.value) }), /* @__PURE__ */ React.createElement("input", { style: inputStyle, placeholder: "\xC9tat de conscience", value: constantes.constante_conscience, onChange: (e) => cc("constante_conscience", e.target.value) })), !constantesEnregistrees && /* @__PURE__ */ React.createElement("button", { style: btnGhost(), onClick: () => onEnregistrerConstantes(constantes) }, "Enregistrer les constantes"), soinsAvecChamps.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } }, "D\xE9tails du/des soin(s)"), soinsAvecChamps.map((soinNom) => /* @__PURE__ */ React.createElement("div", { key: soinNom, style: { border: `1px solid ${T.line}`, borderRadius: 8, padding: 12, marginBottom: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 600, color: T.primary, marginBottom: 8 } }, soinNom), detailsDejaEnregistres ? /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: T.muted, display: "grid", gap: 2 } }, SOIN_CHAMPS[soinNom].map((champ) => {
+    const val = (d.details_soin[soinNom] || {})[champ.key];
+    if (!val) return null;
+    if (champ.type === "photo") {
+      return /* @__PURE__ */ React.createElement("button", { key: champ.key, style: btnGhost(T.muted), onClick: () => ouvrirDocument(val, token) }, "Voir la photo du pansement");
+    }
+    return /* @__PURE__ */ React.createElement("span", { key: champ.key }, champ.label, " : ", val);
+  })) : /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gap: 8 } }, SOIN_CHAMPS[soinNom].map((champ) => {
+    const valeur = (detailsSoin[soinNom] || {})[champ.key] || "";
+    if (champ.type === "select") {
+      return /* @__PURE__ */ React.createElement("select", { key: champ.key, style: inputStyle, value: valeur, onChange: (e) => majDetail(soinNom, champ.key, e.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "" }, champ.label), champ.options.map((o) => /* @__PURE__ */ React.createElement("option", { key: o, value: o }, o)));
+    }
+    if (champ.type === "textarea") {
+      return /* @__PURE__ */ React.createElement("textarea", { key: champ.key, style: { ...inputStyle, minHeight: 55 }, placeholder: champ.label, value: valeur, onChange: (e) => majDetail(soinNom, champ.key, e.target.value) });
+    }
+    if (champ.type === "photo") {
+      return /* @__PURE__ */ React.createElement("label", { key: champ.key, style: { display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${T.line}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" } }, /* @__PURE__ */ React.createElement("span", null, valeur ? "\u{1F4C4}" : "\u{1F4CE}"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, color: T.muted } }, valeur ? "Photo ajout\xE9e" : envoiPhoto ? "Envoi\u2026" : champ.label), /* @__PURE__ */ React.createElement("input", { type: "file", accept: "image/*", style: { display: "none" }, onChange: (e) => gererPhoto(soinNom, champ.key, e.target.files[0]) }));
+    }
+    return /* @__PURE__ */ React.createElement("input", { key: champ.key, style: inputStyle, type: champ.type, placeholder: champ.label, value: valeur, onChange: (e) => majDetail(soinNom, champ.key, e.target.value) });
+  })))), !detailsDejaEnregistres && /* @__PURE__ */ React.createElement("button", { style: btnGhost(), onClick: () => onEnregistrerDetails(detailsSoin) }, "Enregistrer les d\xE9tails du soin")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.muted), onClick: onTerminer }, "Marquer termin\xE9e"), /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.urgent), onClick: () => {
+    if (window.confirm("Annuler ce soin ? Une p\xE9nalit\xE9 de -50% s'appliquera \xE0 votre prochain soin.")) onAnnuler();
+  } }, "Annuler"), /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.gold), onClick: () => setAfficherSignal((v) => !v) }, "Signaler")), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 11.5, color: T.urgent, marginTop: 8, marginBottom: 0 } }, "\u26A0 Si vous acceptez un soin puis l'annulez ou ne l'effectuez pas, une p\xE9nalit\xE9 de -50% sera automatiquement d\xE9duite de votre prochain soin termin\xE9."), afficherSignal && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, border: `1px solid ${T.line}`, borderRadius: 8, padding: 12 } }, /* @__PURE__ */ React.createElement("span", { style: { display: "block", fontSize: 13.5, color: "#54604F", marginBottom: 8 } }, "Choses \xE0 signaler (une ou plusieurs)"), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gap: 8, marginBottom: 14 } }, OPTIONS_SIGNALEMENT.map((m) => /* @__PURE__ */ React.createElement("label", { key: m, style: { display: "flex", alignItems: "center", gap: 10, border: `1px solid ${motifs.includes(m) ? T.gold : T.line}`, borderRadius: 8, padding: "9px 12px", background: motifs.includes(m) ? T.goldBg : "#FFFEFC" } }, /* @__PURE__ */ React.createElement("input", { type: "checkbox", checked: motifs.includes(m), onChange: () => basculerMotif(m) }), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13.5 } }, m)))), /* @__PURE__ */ React.createElement(Champ, { label: "D\xE9tails" }, /* @__PURE__ */ React.createElement("textarea", { style: { ...inputStyle, minHeight: 55 }, value: details, onChange: (e) => setDetails(e.target.value) })), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      style: btnPrimary(motifs.length === 0 ? { opacity: 0.5, cursor: "not-allowed" } : {}),
+      disabled: motifs.length === 0,
+      onClick: () => {
+        onSignaler(motifs.join(", "), details);
+        setAfficherSignal(false);
+        setMotifs([]);
+        setDetails("");
+      }
+    },
+    "Envoyer le signalement \xE0 l'administrateur"
+  ))), detaillee && d.signalement && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, fontSize: 12, color: T.gold } }, "\u26A0 Signal\xE9 \xE0 l'administrateur \u2014 ", d.signalement_motif), detaillee && d.statut === "annulee" && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, fontSize: 12, color: T.urgent } }, "Soin annul\xE9"));
 }
-
 function AdminDash({ session }) {
   const [onglet, setOnglet] = useState("apercu");
   const [demandes, setDemandes] = useState([]);
   const [profils, setProfils] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState("");
-
   async function charger() {
     setChargement(true);
     try {
       const [d, p] = await Promise.all([
         demandesTable.select("order=created_at.desc&select=*", session.token),
-        profilesTable.select("select=*&order=created_at.desc", session.token),
+        profilesTable.select("select=*&order=created_at.desc", session.token)
       ]);
-      setDemandes(d); setProfils(p);
-    } catch (e) { setErreur(e.message); }
-    finally { setChargement(false); }
+      setDemandes(d);
+      setProfils(p);
+    } catch (e) {
+      setErreur(e.message);
+    } finally {
+      setChargement(false);
+    }
   }
-  useEffect(() => { charger(); }, []);
-
+  useEffect(() => {
+    charger();
+  }, []);
   async function approuver(id) {
     try {
       await profilesTable.update(`id=eq.${id}`, { verified: true }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function desactiver(id) {
-    if (!window.confirm("Désactiver ce compte ? La personne ne pourra plus se connecter.")) return;
+    if (!window.confirm("D\xE9sactiver ce compte ? La personne ne pourra plus se connecter.")) return;
     try {
       await profilesTable.update(`id=eq.${id}`, { supprime: true }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
   async function reactiver(id) {
     try {
       await profilesTable.update(`id=eq.${id}`, { supprime: false }, session.token);
       charger();
-    } catch (e) { setErreur(e.message); }
+    } catch (e) {
+      setErreur(e.message);
+    }
   }
-
   const terminees = demandes.filter((d) => d.statut === "terminee");
   const revenuSoins = terminees.reduce((s, d) => s + d.tarif_soin, 0);
   const commission = Math.round(revenuSoins * COMMISSION_TAUX);
@@ -1156,172 +748,33 @@ function AdminDash({ session }) {
   const enAttente = profils.filter((u) => !u.verified && !u.supprime);
   const signalements = demandes.filter((d) => d.signalement);
   const penalites = demandes.filter((d) => d.penalite_appliquee || d.statut === "annulee");
-
-  if (chargement) return <Spinner />;
-
-  return (
-    <div>
-      <ErreurTexte>{erreur}</ErreurTexte>
-      <p style={{ fontSize: 11.5, color: T.muted, marginTop: -8, marginBottom: 16 }}>
-        Aucune donnée n'est jamais supprimée ici — les comptes désactivés et l'historique complet restent consultables en permanence.
-      </p>
-      <Onglets
-        items={[
-          { key: "apercu", label: "Aperçu" },
-          { key: "historique", label: "Historique" },
-          { key: "validations", label: `Validations (${enAttente.length})` },
-          { key: "comptes", label: "Comptes" },
-          { key: "signalements", label: `Signalements (${signalements.length})` },
-        ]}
-        actif={onglet} onChange={setOnglet}
-      />
-
-      {onglet === "apercu" && (
-        <div>
-          <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr", marginBottom: 16 }}>
-            {[["Demandes totales", demandes.length], ["Soins terminés", terminees.length], ["Commission (10%)", formatFCFA(commission)], ["Déplacements collectés", formatFCFA(revenuDeplacements)]].map(([label, val], i) => (
-              <div key={label} style={{ padding: "16px 18px", borderRight: i % 2 === 0 ? `1px solid ${T.line}` : "none", borderBottom: i < 2 ? `1px solid ${T.line}` : "none" }}>
-                <div style={{ fontSize: 20, fontWeight: 700, color: T.primary }}>{val}</div>
-                <div style={{ fontSize: 12.5, color: T.muted, marginTop: 2 }}>{label}</div>
-              </div>
-            ))}
-          </div>
-          {penalites.length > 0 && (
-            <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: "14px 16px" }}>
-              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Pénalités relevées</div>
-              {penalites.map((d) => (
-                <div key={d.id} style={{ fontSize: 13, color: T.muted, marginBottom: 4 }}>
-                  {d.infirmier_nom || "infirmier"} — {d.statut === "annulee" ? "a annulé un soin accepté" : "soin payé à 50% (pénalité appliquée)"} · {d.soin}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {onglet === "historique" && (
-        demandes.length === 0 ? <VideMessage texte="Aucune demande enregistrée." /> :
-        demandes.map((d) => (
-          <div key={d.id} style={{ borderLeft: `3px solid ${STATUS[d.statut].color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
-              <span style={{ fontSize: 12.5, fontWeight: 600, color: STATUS[d.statut].color }}>{STATUS[d.statut].label}</span>
-            </div>
-            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-              Demandeur : {d.patient_nom} · Soigné(e) : {d.soigne_nom} ({d.soigne_lien}) · {d.infirmier_nom || "non assignée"} · {formatFCFA(d.total)}
-              {d.statut === "terminee" && ` · commission ${formatFCFA(Math.round(d.tarif_soin * COMMISSION_TAUX))}`}
-              {d.penalite_appliquee && " · pénalité -50% appliquée"}
-            </div>
-            {d.constante_ta && (
-              <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
-                Constantes : TA {d.constante_ta} · T° {d.constante_temp} · R {d.constante_resp} · Pls {d.constante_pouls} · SpO2 {d.constante_spo2} · Conscience : {d.constante_conscience}
-              </div>
-            )}
-            {d.details_soin && Object.keys(d.details_soin).length > 0 && (
-              <div style={{ fontSize: 12, color: T.muted, marginTop: 6, display: "grid", gap: 3 }}>
-                {Object.entries(d.details_soin).map(([nomSoin, champs]) => (
-                  <div key={nomSoin}>
-                    <strong>{nomSoin} :</strong>{" "}
-                    {(SOIN_CHAMPS[nomSoin] || []).map((champ) => {
-                      const val = champs[champ.key];
-                      if (!val) return null;
-                      if (champ.type === "photo") {
-                        return (
-                          <button key={champ.key} style={{ ...btnGhost(T.muted), padding: "2px 8px", fontSize: 11.5, marginLeft: 4 }} onClick={() => ouvrirDocument(val, session.token)}>
-                            photo
-                          </button>
-                        );
-                      }
-                      return <span key={champ.key}>{champ.label} : {val} · </span>;
-                    })}
-                  </div>
-                ))}
-              </div>
-            )}
-            {d.signalement && <div style={{ fontSize: 12, color: T.gold, marginTop: 4 }}>⚠ Signalé — {d.signalement_motif} : {d.signalement_details}</div>}
-          </div>
-        ))
-      )}
-
-      {onglet === "validations" && (
-        enAttente.length === 0 ? <VideMessage texte="Aucune inscription en attente." /> :
-        enAttente.map((u) => <FicheCompte key={u.id} u={u} session={session} onApprouver={() => approuver(u.id)} />)
-      )}
-
-      {onglet === "comptes" && (
-        profils.length === 0 ? <VideMessage texte="Aucun compte." /> :
-        profils.filter((u) => u.role !== "admin").map((u) => (
-          <FicheCompte key={u.id} u={u} session={session} onDesactiver={() => desactiver(u.id)} onReactiver={() => reactiver(u.id)} />
-        ))
-      )}
-
-      {onglet === "signalements" && (
-        signalements.length === 0 ? <VideMessage texte="Aucun signalement." /> :
-        signalements.map((d) => (
-          <div key={d.id} style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10 }}>
-            <strong style={{ fontSize: 14.5 }}>{d.soin}</strong>
-            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Infirmier(ère) : {d.infirmier_nom} · Patient : {d.soigne_nom}</div>
-            <div style={{ fontSize: 13, color: T.gold, marginTop: 6 }}>Motif : {d.signalement_motif}</div>
-            {d.signalement_details && <div style={{ fontSize: 13, color: T.muted, marginTop: 2 }}>{d.signalement_details}</div>}
-          </div>
-        ))
-      )}
-    </div>
-  );
+  if (chargement) return /* @__PURE__ */ React.createElement(Spinner, null);
+  return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(ErreurTexte, null, erreur), /* @__PURE__ */ React.createElement("p", { style: { fontSize: 11.5, color: T.muted, marginTop: -8, marginBottom: 16 } }, "Aucune donn\xE9e n'est jamais supprim\xE9e ici \u2014 les comptes d\xE9sactiv\xE9s et l'historique complet restent consultables en permanence."), /* @__PURE__ */ React.createElement(
+    Onglets,
+    {
+      items: [
+        { key: "apercu", label: "Aper\xE7u" },
+        { key: "historique", label: "Historique" },
+        { key: "validations", label: `Validations (${enAttente.length})` },
+        { key: "comptes", label: "Comptes" },
+        { key: "signalements", label: `Signalements (${signalements.length})` }
+      ],
+      actif: onglet,
+      onChange: setOnglet
+    }
+  ), onglet === "apercu" && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr", marginBottom: 16 } }, [["Demandes totales", demandes.length], ["Soins termin\xE9s", terminees.length], ["Commission (10%)", formatFCFA(commission)], ["D\xE9placements collect\xE9s", formatFCFA(revenuDeplacements)]].map(([label, val], i) => /* @__PURE__ */ React.createElement("div", { key: label, style: { padding: "16px 18px", borderRight: i % 2 === 0 ? `1px solid ${T.line}` : "none", borderBottom: i < 2 ? `1px solid ${T.line}` : "none" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 700, color: T.primary } }, val), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: T.muted, marginTop: 2 } }, label)))), penalites.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${T.line}`, borderRadius: 10, padding: "14px 16px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 600, fontSize: 14, marginBottom: 8 } }, "P\xE9nalit\xE9s relev\xE9es"), penalites.map((d) => /* @__PURE__ */ React.createElement("div", { key: d.id, style: { fontSize: 13, color: T.muted, marginBottom: 4 } }, d.infirmier_nom || "infirmier", " \u2014 ", d.statut === "annulee" ? "a annul\xE9 un soin accept\xE9" : "soin pay\xE9 \xE0 50% (p\xE9nalit\xE9 appliqu\xE9e)", " \xB7 ", d.soin)))), onglet === "historique" && (demandes.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucune demande enregistr\xE9e." }) : demandes.map((d) => /* @__PURE__ */ React.createElement("div", { key: d.id, style: { borderLeft: `3px solid ${STATUS[d.statut].color}`, background: T.card, padding: "13px 16px", marginBottom: 10, borderRadius: "0 8px 8px 0" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between" } }, /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 14.5 } }, d.soin), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12.5, fontWeight: 600, color: STATUS[d.statut].color } }, STATUS[d.statut].label)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 4 } }, "Demandeur : ", d.patient_nom, " \xB7 Soign\xE9(e) : ", d.soigne_nom, " (", d.soigne_lien, ") \xB7 ", d.infirmier_nom || "non assign\xE9e", " \xB7 ", formatFCFA(d.total), d.statut === "terminee" && ` \xB7 commission ${formatFCFA(Math.round(d.tarif_soin * COMMISSION_TAUX))}`, d.penalite_appliquee && " \xB7 p\xE9nalit\xE9 -50% appliqu\xE9e"), d.constante_ta && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: T.muted, marginTop: 4 } }, "Constantes : TA ", d.constante_ta, " \xB7 T\xB0 ", d.constante_temp, " \xB7 R ", d.constante_resp, " \xB7 Pls ", d.constante_pouls, " \xB7 SpO2 ", d.constante_spo2, " \xB7 Conscience : ", d.constante_conscience), d.details_soin && Object.keys(d.details_soin).length > 0 && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: T.muted, marginTop: 6, display: "grid", gap: 3 } }, Object.entries(d.details_soin).map(([nomSoin, champs]) => /* @__PURE__ */ React.createElement("div", { key: nomSoin }, /* @__PURE__ */ React.createElement("strong", null, nomSoin, " :"), " ", (SOIN_CHAMPS[nomSoin] || []).map((champ) => {
+    const val = champs[champ.key];
+    if (!val) return null;
+    if (champ.type === "photo") {
+      return /* @__PURE__ */ React.createElement("button", { key: champ.key, style: { ...btnGhost(T.muted), padding: "2px 8px", fontSize: 11.5, marginLeft: 4 }, onClick: () => ouvrirDocument(val, session.token) }, "photo");
+    }
+    return /* @__PURE__ */ React.createElement("span", { key: champ.key }, champ.label, " : ", val, " \xB7 ");
+  })))), d.signalement && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: T.gold, marginTop: 4 } }, "\u26A0 Signal\xE9 \u2014 ", d.signalement_motif, " : ", d.signalement_details)))), onglet === "validations" && (enAttente.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucune inscription en attente." }) : enAttente.map((u) => /* @__PURE__ */ React.createElement(FicheCompte, { key: u.id, u, session, onApprouver: () => approuver(u.id) }))), onglet === "comptes" && (profils.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucun compte." }) : profils.filter((u) => u.role !== "admin").map((u) => /* @__PURE__ */ React.createElement(FicheCompte, { key: u.id, u, session, onDesactiver: () => desactiver(u.id), onReactiver: () => reactiver(u.id) }))), onglet === "signalements" && (signalements.length === 0 ? /* @__PURE__ */ React.createElement(VideMessage, { texte: "Aucun signalement." }) : signalements.map((d) => /* @__PURE__ */ React.createElement("div", { key: d.id, style: { border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10 } }, /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 14.5 } }, d.soin), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 4 } }, "Infirmier(\xE8re) : ", d.infirmier_nom, " \xB7 Patient : ", d.soigne_nom), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.gold, marginTop: 6 } }, "Motif : ", d.signalement_motif), d.signalement_details && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: T.muted, marginTop: 2 } }, d.signalement_details)))));
 }
-
 function FicheCompte({ u, session, onApprouver, onDesactiver, onReactiver }) {
-  return (
-    <div style={{ border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10, opacity: u.supprime ? 0.55 : 1 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <strong style={{ fontSize: 14.5 }}>{u.role === "infirmier" ? `${u.prenom} ${u.nom}` : u.nom}</strong>
-          <div style={{ fontSize: 12.5, color: T.muted }}>
-            {u.role === "infirmier" ? "Infirmier" : "Patient"} · {u.email}
-            {u.supprime && " · désactivé"}
-            {!u.verified && !u.supprime && " · en attente"}
-          </div>
-        </div>
-      </div>
-
-      {u.role === "infirmier" && (
-        <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
-          <span>{u.specialite} · {u.age} ans · {u.residence}</span>
-          <span>{u.telephone}</span>
-          <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
-            <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_carte_url, session.token)}>Voir la carte de l'ordre</button>
-            <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_diplome_url, session.token)}>Voir le diplôme</button>
-          </div>
-        </div>
-      )}
-
-      {u.role === "patient" && (
-        <div style={{ fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 }}>
-          <span>{u.sexe} · {u.age} ans · {u.nationalite} · {u.situation_matrimoniale}</span>
-          <span>{u.telephone} · {u.quartier}</span>
-          {u.tuteur_nom && <span>Tuteur : {u.tuteur_nom} — {u.tuteur_telephone}</span>}
-          {u.atcd_medicaux && <span>Antécédents médicaux : {u.atcd_medicaux}</span>}
-          {u.atcd_chirurgicaux && <span>Antécédents chirurgicaux : {u.atcd_chirurgicaux}</span>}
-          {u.atcd_familiaux && <span>Antécédents familiaux : {u.atcd_familiaux}</span>}
-          {u.allergies && <span>Allergies : {u.allergies}</span>}
-          {u.photo_piece_url && (
-            <div style={{ marginTop: 6 }}>
-              <button style={btnGhost(T.muted)} onClick={() => ouvrirDocument(u.photo_piece_url, session.token)}>Voir la pièce d'identité</button>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-        {onApprouver && <button style={{ ...btnGhost(T.primary) }} onClick={onApprouver}>✓ Approuver</button>}
-        {onDesactiver && !u.supprime && <button style={btnGhost(T.urgent)} onClick={onDesactiver}>Désactiver le compte</button>}
-        {onReactiver && u.supprime && <button style={btnGhost(T.primary)} onClick={onReactiver}>Réactiver le compte</button>}
-      </div>
-    </div>
-  );
+  return /* @__PURE__ */ React.createElement("div", { style: { border: `1px solid ${T.line}`, background: T.card, borderRadius: 10, padding: "14px 16px", marginBottom: 10, opacity: u.supprime ? 0.55 : 1 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("strong", { style: { fontSize: 14.5 } }, u.role === "infirmier" ? `${u.prenom} ${u.nom}` : u.nom), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12.5, color: T.muted } }, u.role === "infirmier" ? "Infirmier" : "Patient", " \xB7 ", u.email, u.supprime && " \xB7 d\xE9sactiv\xE9", !u.verified && !u.supprime && " \xB7 en attente"))), u.role === "infirmier" && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 } }, /* @__PURE__ */ React.createElement("span", null, u.specialite, " \xB7 ", u.age, " ans \xB7 ", u.residence), /* @__PURE__ */ React.createElement("span", null, u.telephone), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" } }, /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.muted), onClick: () => ouvrirDocument(u.photo_carte_url, session.token) }, "Voir la carte de l'ordre"), /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.muted), onClick: () => ouvrirDocument(u.photo_diplome_url, session.token) }, "Voir le dipl\xF4me"))), u.role === "patient" && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: "#4B5A4F", marginTop: 8, display: "grid", gap: 2 } }, /* @__PURE__ */ React.createElement("span", null, u.sexe, " \xB7 ", u.age, " ans \xB7 ", u.nationalite, " \xB7 ", u.situation_matrimoniale), /* @__PURE__ */ React.createElement("span", null, u.telephone, " \xB7 ", u.quartier), u.tuteur_nom && /* @__PURE__ */ React.createElement("span", null, "Tuteur : ", u.tuteur_nom, " \u2014 ", u.tuteur_telephone), u.atcd_medicaux && /* @__PURE__ */ React.createElement("span", null, "Ant\xE9c\xE9dents m\xE9dicaux : ", u.atcd_medicaux), u.atcd_chirurgicaux && /* @__PURE__ */ React.createElement("span", null, "Ant\xE9c\xE9dents chirurgicaux : ", u.atcd_chirurgicaux), u.atcd_familiaux && /* @__PURE__ */ React.createElement("span", null, "Ant\xE9c\xE9dents familiaux : ", u.atcd_familiaux), u.allergies && /* @__PURE__ */ React.createElement("span", null, "Allergies : ", u.allergies), u.photo_piece_url && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 6 } }, /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.muted), onClick: () => ouvrirDocument(u.photo_piece_url, session.token) }, "Voir la pi\xE8ce d'identit\xE9"))), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" } }, onApprouver && /* @__PURE__ */ React.createElement("button", { style: { ...btnGhost(T.primary) }, onClick: onApprouver }, "\u2713 Approuver"), onDesactiver && !u.supprime && /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.urgent), onClick: onDesactiver }, "D\xE9sactiver le compte"), onReactiver && u.supprime && /* @__PURE__ */ React.createElement("button", { style: btnGhost(T.primary), onClick: onReactiver }, "R\xE9activer le compte")));
 }
-
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(/* @__PURE__ */ React.createElement(App, null));
 </script>
 </body>
 </html>
